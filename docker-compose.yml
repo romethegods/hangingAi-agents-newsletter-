@@ -1,0 +1,55 @@
+# Runs the whole backend: locally now, and on the Google Cloud VM later.
+#   docker compose up --build
+services:
+  db:
+    image: pgvector/pgvector:pg16  # plain Postgres 16 + the vector extension we'll need in M2
+    environment:
+      POSTGRES_USER: hanging
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hanging}
+      POSTGRES_DB: hanging
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hanging"]
+      interval: 5s
+      retries: 10
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+psycopg://hanging:${POSTGRES_PASSWORD:-hanging}@db:5432/hanging
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      start_period: 20s
+      retries: 5
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.worker
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+psycopg://hanging:${POSTGRES_PASSWORD:-hanging}@db:5432/hanging
+    shm_size: 1gb  # Chrome crashes with Docker's default 64 MB /dev/shm
+    depends_on:
+      api:
+        condition: service_healthy  # api has finished running migrations
+    restart: unless-stopped
+
+volumes:
+  pgdata:

@@ -1,0 +1,28 @@
+# Scrape worker image: the API image plus Chromium for nodriver. Build context: backend/
+FROM python:3.12-slim
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends chromium fonts-liberation \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=ghcr.io/astral-sh/uv:0.12 /uv /usr/local/bin/uv
+# BROWSER_SANDBOX=false: Chrome's sandbox needs kernel features most container
+# runtimes don't grant; the container itself is the isolation boundary.
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_PROJECT_ENVIRONMENT=/opt/venv \
+    PATH="/opt/venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1 \
+    BROWSER_EXECUTABLE=/usr/bin/chromium \
+    BROWSER_SANDBOX=false
+
+WORKDIR /srv
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev --no-install-project
+
+COPY app ./app
+
+RUN useradd --create-home --uid 10001 hanging
+USER hanging
+
+CMD ["python", "-m", "app.worker"]
