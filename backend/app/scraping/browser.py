@@ -59,7 +59,12 @@ class BrowserPool:
             headless=self._headless,
             sandbox=self._sandbox,
             browser_executable_path=executable,
-            browser_args=[f"--user-agent={honest_user_agent(executable)}"],
+            browser_args=[
+                f"--user-agent={honest_user_agent(executable)}",
+                # Containers (Railway, Docker) often have a tiny /dev/shm; Chrome
+                # crashes on big pages unless it uses /tmp instead.
+                "--disable-dev-shm-usage",
+            ],
         )
         log.info("browser started: %s", executable)
 
