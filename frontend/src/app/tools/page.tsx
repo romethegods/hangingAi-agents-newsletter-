@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 
 import { EmptyState } from "@/components/EmptyState";
+import { PageHeader } from "@/components/PageHeader";
 import { CardGridSkeleton } from "@/components/Skeleton";
 import { Tabs } from "@/components/Tabs";
 import { ToolCard } from "@/components/ToolCard";
@@ -26,13 +27,11 @@ const SORTS: { key: ToolSort; label: string }[] = [
 
 export default function ToolsPage({ searchParams }: PageProps<"/tools">) {
   return (
-    <div className="space-y-6">
-      <header className="space-y-1">
-        <h1 className="text-2xl font-bold tracking-tight">Open-source AI tools</h1>
-        <p className="text-muted">
-          Agents, LLM frameworks, MCP servers and more, ranked by stars gained per day.
-        </p>
-      </header>
+    <div>
+      <PageHeader kicker="Section B · The tools desk" title="Open-source AI tools">
+        Agents, LLM frameworks, MCP servers and more, ranked by the stars they&apos;re gaining
+        each day.
+      </PageHeader>
       <Suspense fallback={<CardGridSkeleton />}>
         <ToolsDirectory searchParams={searchParams} />
       </Suspense>
@@ -64,7 +63,7 @@ async function ToolsDirectory({ searchParams }: Pick<PageProps<"/tools">, "searc
     });
 
   return (
-    <>
+    <div className="space-y-6">
       <Tabs
         label="Sort tools"
         active={sort}
@@ -85,19 +84,19 @@ async function ToolsDirectory({ searchParams }: Pick<PageProps<"/tools">, "searc
             href={href({ topic: t.topic, page: undefined })}
             active={t.topic === topic}
           >
-            {t.topic} <span className="text-muted">{t.count}</span>
+            #{t.topic} <span className="opacity-60">{t.count}</span>
           </TopicChip>
         ))}
       </nav>
 
       {tools.items.length === 0 ? (
         <EmptyState title="No tools match">
-          <Link href="/tools" className="text-accent hover:underline">
+          <Link href="/tools" className="font-semibold hover:text-tomato">
             Clear filters
           </Link>
         </EmptyState>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {tools.items.map((tool) => (
             <ToolCard key={tool.id} tool={tool} now={now} />
           ))}
@@ -105,9 +104,9 @@ async function ToolsDirectory({ searchParams }: Pick<PageProps<"/tools">, "searc
       )}
 
       {pages > 1 && (
-        <nav aria-label="Pagination" className="flex items-center justify-between text-sm">
+        <nav aria-label="Pagination" className="kicker flex items-center justify-between border-t-2 border-ink pt-4">
           {page > 1 ? (
-            <Link href={href({ page: page - 1 === 1 ? undefined : page - 1 })} className="text-accent hover:underline">
+            <Link href={href({ page: page - 1 === 1 ? undefined : page - 1 })} className="font-semibold hover:text-tomato">
               ← Previous
             </Link>
           ) : (
@@ -117,7 +116,7 @@ async function ToolsDirectory({ searchParams }: Pick<PageProps<"/tools">, "searc
             Page {page} of {pages}
           </span>
           {page < pages ? (
-            <Link href={href({ page: page + 1 })} className="text-accent hover:underline">
+            <Link href={href({ page: page + 1 })} className="font-semibold hover:text-tomato">
               Next →
             </Link>
           ) : (
@@ -125,7 +124,7 @@ async function ToolsDirectory({ searchParams }: Pick<PageProps<"/tools">, "searc
           )}
         </nav>
       )}
-    </>
+    </div>
   );
 }
 
@@ -142,10 +141,8 @@ function TopicChip({
     <Link
       href={href}
       aria-current={active ? "page" : undefined}
-      className={`rounded-full border px-3 py-1 text-sm ${
-        active
-          ? "border-accent bg-accent-soft text-accent"
-          : "border-border text-foreground hover:border-accent"
+      className={`inline-block border-2 border-ink px-2.5 py-1 font-mono text-xs ${
+        active ? "bg-ink text-paper" : "bg-paper-raised hover:bg-mustard hover:text-[#171614]"
       }`}
     >
       {children}

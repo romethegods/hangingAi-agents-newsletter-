@@ -14,13 +14,14 @@ export default function Error({
   }, [error]);
 
   return (
-    <div className="mx-auto max-w-md space-y-3 py-16 text-center">
-      <h1 className="text-2xl font-bold">Something went wrong</h1>
+    <div className="mx-auto max-w-md space-y-4 py-16 text-center">
+      <p className="kicker text-tomato">Wire down</p>
+      <h1 className="font-display text-4xl font-black">Something went wrong</h1>
       <p className="text-muted">We couldn&apos;t load this right now. It&apos;s usually temporary.</p>
       <button
         type="button"
         onClick={() => retry()}
-        className="rounded-md bg-accent px-4 py-2 font-medium text-white hover:opacity-90"
+        className="kicker border-2 border-ink bg-tomato px-4 py-2 font-bold text-on-accent shadow-hard-sm"
       >
         Try again
       </button>

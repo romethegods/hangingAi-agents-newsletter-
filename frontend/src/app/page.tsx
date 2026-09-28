@@ -3,17 +3,20 @@ import { connection } from "next/server";
 import { Suspense } from "react";
 
 import { EmptyState } from "@/components/EmptyState";
-import { FeedItem } from "@/components/FeedItem";
+import { FeedItem, LeadStory } from "@/components/FeedItem";
+import { RankMark } from "@/components/Geometry";
+import { SectionHeader } from "@/components/SectionHeader";
 import { FeedSkeleton } from "@/components/Skeleton";
 import { Tabs } from "@/components/Tabs";
 import { StarVelocity, ToolName } from "@/components/ToolCard";
 import { getFeed, getTools } from "@/lib/api";
+import { compactNumber } from "@/lib/format";
+import { requestNow } from "@/lib/time";
 import type { ContentType, FeedSort } from "@/lib/types";
 import { oneOf, param, withQuery } from "@/lib/url";
-import { requestNow } from "@/lib/time";
 
 const FEED_TABS = {
-  top: { label: "Top", sort: "hot" },
+  top: { label: "Top stories", sort: "hot" },
   latest: { label: "Latest", sort: "latest" },
   papers: { label: "Papers", sort: "latest", content_type: "paper" },
   models: { label: "Models", sort: "hot", content_type: "model" },
@@ -25,21 +28,17 @@ const TAB_KEYS = Object.keys(FEED_TABS) as TabKey[];
 
 export default function Home({ searchParams }: PageProps<"/">) {
   return (
-    <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_300px]">
-      <section aria-labelledby="feed-heading">
-        <h1 id="feed-heading" className="sr-only">
-          AI news feed
-        </h1>
+    <div className="grid gap-12 lg:grid-cols-[minmax(0,1fr)_300px]">
+      <section aria-label="AI news feed">
         <Suspense fallback={<FeedSkeleton />}>
           <HomeFeed searchParams={searchParams} />
         </Suspense>
       </section>
-      <aside aria-labelledby="trending-heading" className="lg:pt-1">
-        <h2 id="trending-heading" className="mb-3 text-sm font-semibold tracking-wide text-muted uppercase">
-          Trending open-source tools
-        </h2>
+      <aside aria-labelledby="leaderboard-heading">
+        <SectionHeader number={3} title="The Leaderboard" id="leaderboard-heading" />
+        <p className="kicker mb-4 text-muted">Open-source tools gaining stars fastest</p>
         <Suspense fallback={<FeedSkeleton rows={6} />}>
-          <TrendingTools />
+          <Leaderboard />
         </Suspense>
       </aside>
     </div>
@@ -65,29 +64,40 @@ async function HomeFeed({ searchParams }: Pick<PageProps<"/">, "searchParams">) 
     href: withQuery("/", { tab: key === "top" ? undefined : key }),
   }));
 
+  const [lead, ...rest] = page.items;
+  const showLead = tab === "top" && !cursor && lead;
+
   return (
-    <>
+    <div className="space-y-8">
       <Tabs tabs={tabs} active={tab} label="Feed sections" />
+
       {page.items.length === 0 ? (
-        <div className="mt-6">
-          <EmptyState title="Nothing here yet">The crawler adds new items every hour.</EmptyState>
-        </div>
+        <EmptyState title="Nothing here yet">The crawler adds new items every hour.</EmptyState>
+      ) : showLead ? (
+        <>
+          <LeadStory article={lead} now={now} />
+          <section aria-labelledby="issue-heading">
+            <SectionHeader number={2} title="In this issue" id="issue-heading" />
+            <div className="grid gap-x-8 md:grid-cols-2">
+              {rest.map((article, i) => (
+                <FeedItem key={article.id} article={article} now={now} rank={i + 2} compact />
+              ))}
+            </div>
+          </section>
+        </>
       ) : (
-        <div>
-          {page.items.map((article, i) => (
-            <FeedItem
-              key={article.id}
-              article={article}
-              now={now}
-              rank={tab === "top" ? i + 1 : undefined}
-            />
+        <section aria-labelledby="list-heading">
+          <SectionHeader number={1} title={FEED_TABS[tab].label} id="list-heading" />
+          {page.items.map((article) => (
+            <FeedItem key={article.id} article={article} now={now} />
           ))}
-        </div>
+        </section>
       )}
+
       {(cursor || page.next_cursor) && (
-        <nav aria-label="Pagination" className="mt-6 flex justify-between text-sm">
+        <nav aria-label="Pagination" className="kicker flex justify-between border-t-2 border-ink pt-4">
           {cursor ? (
-            <Link href={withQuery("/", { tab })} className="text-muted hover:text-foreground">
+            <Link href={withQuery("/", { tab })} className="font-semibold hover:text-tomato">
               ← Newest
             </Link>
           ) : (
@@ -96,38 +106,49 @@ async function HomeFeed({ searchParams }: Pick<PageProps<"/">, "searchParams">) 
           {page.next_cursor && (
             <Link
               href={withQuery("/", { tab, cursor: page.next_cursor })}
-              className="font-medium text-accent hover:underline"
+              className="font-semibold hover:text-tomato"
             >
               Older →
             </Link>
           )}
         </nav>
       )}
-    </>
+    </div>
   );
 }
 
-async function TrendingTools() {
+async function Leaderboard() {
   await connection(); // request-time only, so builds don't depend on the API
   const { items } = await getTools({ sort: "trending", limit: 8 });
   if (items.length === 0) return <p className="text-sm text-muted">No tools tracked yet.</p>;
   return (
     <>
-      <ol className="space-y-3">
-        {items.map((tool) => (
-          <li key={tool.id} className="text-sm">
-            <a href={tool.url} target="_blank" rel="noopener" className="font-medium hover:text-accent">
-              <ToolName fullName={tool.full_name} />
-            </a>
-            <div className="mt-0.5 flex items-center gap-2 text-xs text-muted">
-              <span>★ {tool.stars.toLocaleString("en")}</span>
-              <StarVelocity perDay={tool.star_velocity} />
+      <ol className="space-y-4">
+        {items.map((tool, i) => (
+          <li key={tool.id} className="flex items-start gap-3">
+            <RankMark rank={i + 1} />
+            <div className="min-w-0 text-sm">
+              <a
+                href={tool.url}
+                target="_blank"
+                rel="noopener"
+                className="font-semibold break-words hover:text-tomato"
+              >
+                <ToolName fullName={tool.full_name} />
+              </a>
+              <div className="mt-1 flex items-center gap-2 font-mono text-[11px] text-muted">
+                <span>★ {compactNumber(tool.stars)}</span>
+                <StarVelocity perDay={tool.star_velocity} />
+              </div>
             </div>
           </li>
         ))}
       </ol>
-      <Link href="/tools" className="mt-4 inline-block text-sm font-medium text-accent hover:underline">
-        All tools →
+      <Link
+        href="/tools"
+        className="kicker mt-6 inline-block border-2 border-ink px-3 py-2 font-semibold shadow-hard-sm hover:bg-mustard hover:text-[#171614]"
+      >
+        Full leaderboard →
       </Link>
     </>
   );

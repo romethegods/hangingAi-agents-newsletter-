@@ -1,45 +1,87 @@
 @import "tailwindcss";
 
+/*
+ * "Newsprint meets 2026": warm paper, black ink, flat 90s geometric accents.
+ * No glow, no gradients: color comes from flat shapes and badges only.
+ */
 :root {
-  --background: #fbfaf8;
-  --surface: #ffffff;
-  --foreground: #1a1917;
-  --muted: #6b6860;
-  --border: #e7e4de;
-  --accent: #d9480f;
-  --accent-soft: #fff0e8;
+  --paper: #f3eee3;
+  --paper-raised: #fbf8f1;
+  --ink: #171614;
+  --muted: #5f5a50;
+  --hairline: #d6cebd;
+  --shadow-ink: #171614;
+
+  --tomato: #b93b1a;
+  --cobalt: #2d4bb3;
+  --mustard: #e0a526;
+  --teal: #1d7467;
+  --on-accent: #ffffff; /* text on tomato/cobalt/teal blocks */
 }
 
 @media (prefers-color-scheme: dark) {
+  /* The "night edition": same paper-and-ink system, inverted. */
   :root {
-    --background: #121110;
-    --surface: #1b1a18;
-    --foreground: #ecebe8;
-    --muted: #a19d94;
-    --border: #2d2b28;
-    --accent: #ff7a3d;
-    --accent-soft: #2a1a12;
+    --paper: #161512;
+    --paper-raised: #1f1d19;
+    --ink: #efe9dc;
+    --muted: #a8a193;
+    --hairline: #3a362f;
+    --shadow-ink: #4a453c;
+
+    --tomato: #e0603c;
+    --cobalt: #6f8ae6;
+    --mustard: #e6b347;
+    --teal: #45a898;
+    --on-accent: #171614; /* night accents are light, so text flips to ink */
   }
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-surface: var(--surface);
-  --color-foreground: var(--foreground);
+  --color-paper: var(--paper);
+  --color-paper-raised: var(--paper-raised);
+  --color-ink: var(--ink);
   --color-muted: var(--muted);
-  --color-border: var(--border);
-  --color-accent: var(--accent);
-  --color-accent-soft: var(--accent-soft);
+  --color-hairline: var(--hairline);
+  --color-tomato: var(--tomato);
+  --color-cobalt: var(--cobalt);
+  --color-mustard: var(--mustard);
+  --color-teal: var(--teal);
+  --color-on-accent: var(--on-accent);
+
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-fraunces);
+
+  --shadow-hard: 4px 4px 0 0 var(--shadow-ink);
+  --shadow-hard-sm: 2px 2px 0 0 var(--shadow-ink);
+}
+
+/* Faint halftone dots, like a newsprint screen. */
+@utility halftone {
+  background-image: radial-gradient(var(--hairline) 1px, transparent 1.3px);
+  background-size: 9px 9px;
+}
+
+/* Small uppercase mono labels: datelines, section numbers, metadata. */
+@utility kicker {
+  font-family: var(--font-geist-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
+  background: var(--paper);
+  color: var(--ink);
+}
+
+::selection {
+  background: var(--mustard);
+  color: #171614;
 }
 
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--cobalt);
   outline-offset: 2px;
 }

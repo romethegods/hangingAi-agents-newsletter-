@@ -3,6 +3,7 @@ import { Suspense } from "react";
 
 import { EmptyState } from "@/components/EmptyState";
 import { FeedItem } from "@/components/FeedItem";
+import { PageHeader } from "@/components/PageHeader";
 import { FeedSkeleton } from "@/components/Skeleton";
 import { searchArticles } from "@/lib/api";
 import { requestNow } from "@/lib/time";
@@ -35,9 +36,7 @@ async function Results({ searchParams }: Pick<PageProps<"/search">, "searchParam
   const now = await requestNow();
   return (
     <section className="space-y-4">
-      <h1 className="text-xl font-semibold">
-        {results.length} result{results.length === 1 ? "" : "s"} for “{q}”
-      </h1>
+      <PageHeader kicker={`${results.length} result${results.length === 1 ? "" : "s"}`} title={`“${q}”`} />
       {results.length === 0 ? (
         <EmptyState title="No matches">Try fewer or different words.</EmptyState>
       ) : (

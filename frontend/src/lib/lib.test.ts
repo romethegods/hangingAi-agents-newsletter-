@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { compactNumber, engagementLabel, hostname, timeAgo } from "./format";
+import { compactNumber, edition, engagementLabel, hostname, timeAgo } from "./format";
 import { oneOf, param, positiveInt, withQuery } from "./url";
 
 const NOW = Date.parse("2026-09-28T12:00:00Z");
@@ -54,5 +54,19 @@ describe("formatting", () => {
     expect(engagementLabel({ content_type: "model", engagement: 4227 })).toBe("♥ 4.2K likes");
     expect(engagementLabel({ content_type: "news", engagement: 50 })).toBeNull();
     expect(engagementLabel({ content_type: "paper", engagement: null })).toBeNull();
+  });
+});
+
+describe("edition", () => {
+  it("numbers issues by New York calendar day from launch", () => {
+    expect(edition(Date.parse("2026-09-28T16:00:00Z"))).toEqual({
+      volume: 1,
+      number: 1,
+      dateline: "Monday, September 28, 2026",
+    });
+    // 01:00 UTC on the 29th is still the evening of the 28th in New York.
+    expect(edition(Date.parse("2026-09-29T01:00:00Z")).number).toBe(1);
+    expect(edition(Date.parse("2026-09-29T12:00:00Z")).number).toBe(2);
+    expect(edition(Date.parse("2027-09-28T12:00:00Z"))).toMatchObject({ volume: 2, number: 366 });
   });
 });

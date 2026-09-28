@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { Suspense } from "react";
 
 import { ArticleMeta, FeedItem } from "@/components/FeedItem";
+import { SectionHeader } from "@/components/SectionHeader";
 import { FeedSkeleton } from "@/components/Skeleton";
 import { getArticle } from "@/lib/api";
 import { hostname } from "@/lib/format";
@@ -50,34 +51,39 @@ async function Item({ params }: Pick<PageProps<"/item/[id]">, "params">) {
   };
 
   return (
-    <article className="mx-auto max-w-3xl space-y-6">
+    <article className="mx-auto max-w-3xl">
       <script
         type="application/ld+json"
         // JSON.stringify output with "<" escaped cannot break out of the script tag.
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c") }}
       />
-      <Link href="/" className="text-sm text-muted hover:text-foreground">
-        ← Back to feed
+      <Link href="/" className="kicker font-semibold text-muted hover:text-tomato">
+        ← Front page
       </Link>
-      <header className="space-y-3">
-        <h1 className="text-3xl leading-tight font-bold tracking-tight">{article.title}</h1>
+      <header className="mt-6 space-y-5 border-b-[3px] border-ink pb-6">
+        <p className="kicker text-tomato">{article.source.name}</p>
+        <h1 className="font-display text-4xl leading-[1.05] font-black tracking-tight sm:text-5xl">
+          {article.title}
+        </h1>
         <ArticleMeta article={article} now={now} />
       </header>
-      {article.summary && <p className="text-lg leading-relaxed">{article.summary}</p>}
+      {article.summary && (
+        <p className="mt-6 text-lg leading-relaxed first-letter:float-left first-letter:mt-1 first-letter:mr-3 first-letter:font-display first-letter:text-6xl first-letter:leading-[0.8] first-letter:font-black first-letter:text-tomato">
+          {article.summary}
+        </p>
+      )}
       <a
         href={article.url}
         target="_blank"
         rel="noopener"
-        className="inline-block rounded-md bg-accent px-4 py-2 font-medium text-white hover:opacity-90"
+        className="kicker mt-8 inline-block border-2 border-ink bg-tomato px-5 py-3 text-[0.8rem] font-bold text-on-accent shadow-hard transition-[transform,box-shadow] hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[6px_6px_0_0_var(--shadow-ink)]"
       >
-        Read on {hostname(article.url)} ↗
+        Read the original on {hostname(article.url)} ↗
       </a>
 
       {article.coverage.length > 0 && (
-        <section aria-labelledby="coverage-heading" className="border-t border-border pt-6">
-          <h2 id="coverage-heading" className="text-sm font-semibold tracking-wide text-muted uppercase">
-            Also covered by
-          </h2>
+        <section aria-labelledby="coverage-heading" className="mt-12">
+          <SectionHeader number={2} title="Also covered by" id="coverage-heading" />
           {article.coverage.map((other) => (
             <FeedItem key={other.id} article={other} now={now} />
           ))}

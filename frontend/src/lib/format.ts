@@ -54,3 +54,31 @@ export const CONTENT_TYPE_LABEL: Record<Article["content_type"], string> = {
   paper: "Paper",
   model: "Model",
 };
+
+// Newsletter edition numbering: No. 1 is launch day, counted in New York time
+// so the date doesn't flip at 8pm for US readers when the server runs in UTC.
+export const LAUNCH_DATE = "2026-09-28";
+export const EDITION_TIME_ZONE = "America/New_York";
+
+function calendarDay(now: number, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value);
+  return Date.UTC(get("year"), get("month") - 1, get("day")) / 86_400_000;
+}
+
+export function edition(now: number): { volume: number; number: number; dateline: string } {
+  const days = calendarDay(now, EDITION_TIME_ZONE) - Date.parse(LAUNCH_DATE) / 86_400_000;
+  const dateline = new Intl.DateTimeFormat("en-US", {
+    timeZone: EDITION_TIME_ZONE,
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  }).format(now);
+  return { volume: Math.floor(days / 365) + 1, number: Math.max(1, days + 1), dateline };
+}

@@ -6,26 +6,28 @@ export interface Tab {
   href: string;
 }
 
+/** Segmented control: ink-bordered blocks, the active one filled solid. */
 export function Tabs({ tabs, active, label }: { tabs: Tab[]; active: string; label: string }) {
   return (
-    <nav aria-label={label} className="flex gap-1 overflow-x-auto border-b border-border">
-      {tabs.map((tab) => {
-        const current = tab.key === active;
-        return (
-          <Link
-            key={tab.key}
-            href={tab.href}
-            aria-current={current ? "page" : undefined}
-            className={`-mb-px border-b-2 px-3 py-2 text-sm whitespace-nowrap ${
-              current
-                ? "border-accent font-medium text-foreground"
-                : "border-transparent text-muted hover:text-foreground"
-            }`}
-          >
-            {tab.label}
-          </Link>
-        );
-      })}
+    <nav aria-label={label} className="overflow-x-auto">
+      <ul className="inline-flex border-2 border-ink">
+        {tabs.map((tab) => {
+          const current = tab.key === active;
+          return (
+            <li key={tab.key} className="border-r-2 border-ink last:border-none">
+              <Link
+                href={tab.href}
+                aria-current={current ? "page" : undefined}
+                className={`kicker block px-3 py-2 font-semibold whitespace-nowrap ${
+                  current ? "bg-ink text-paper" : "hover:bg-mustard hover:text-[#171614]"
+                }`}
+              >
+                {tab.label}
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
     </nav>
   );
 }

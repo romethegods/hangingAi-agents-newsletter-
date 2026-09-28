@@ -1,5 +1,8 @@
 import type { Metadata } from "next";
 
+import { PageHeader } from "@/components/PageHeader";
+import { SectionHeader } from "@/components/SectionHeader";
+
 export const metadata: Metadata = {
   title: "About",
   description: "What HangingAi is, where its content comes from, and how our crawler behaves.",
@@ -15,8 +18,8 @@ export default function AboutPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-10 leading-relaxed">
       <section className="space-y-3">
-        <h1 className="text-3xl font-bold tracking-tight">About HangingAi</h1>
-        <p>
+        <PageHeader kicker="The masthead" title="About HangingAi" />
+        <p className="text-lg">
           AI moves fast, and the good stuff is spread across research hubs, GitHub and the news.
           HangingAi collects the papers, models, news and open-source agent tools that matter,
           removes duplicates, and ranks them so you can catch up in minutes.
@@ -24,8 +27,8 @@ export default function AboutPage() {
       </section>
 
       <section className="space-y-3">
-        <h2 className="text-xl font-semibold">Where content comes from</h2>
-        <ul className="list-disc space-y-1 pl-5">
+        <SectionHeader number={1} title="Where content comes from" />
+        <ul className="list-[square] space-y-1 pl-5 marker:text-tomato">
           {SOURCES.map(([name, detail]) => (
             <li key={name}>
               <strong>{name}</strong>: {detail}
@@ -39,14 +42,14 @@ export default function AboutPage() {
       </section>
 
       <section id="crawler" className="scroll-mt-20 space-y-3">
-        <h2 className="text-xl font-semibold">Our crawler</h2>
+        <SectionHeader number={2} title="Our crawler" />
         <p>
           HangingAi&apos;s crawler identifies itself with this token in its user agent:
         </p>
-        <pre className="overflow-x-auto rounded-md border border-border bg-surface p-3 font-mono text-sm">
+        <pre className="overflow-x-auto border-2 border-ink bg-paper-raised p-4 font-mono text-sm shadow-hard-sm">
           HangingAiBot/0.1 (+https://hangingai.com/bot)
         </pre>
-        <ul className="list-disc space-y-1 pl-5">
+        <ul className="list-[square] space-y-1 pl-5 marker:text-tomato">
           <li>
             It obeys <code className="font-mono">robots.txt</code>, including{" "}
             <code className="font-mono">Crawl-delay</code>.
@@ -55,7 +58,7 @@ export default function AboutPage() {
           <li>It does not attempt to get around logins, paywalls or bot protection.</li>
         </ul>
         <p>To opt out, add this to your robots.txt. We pick up changes within 12 hours:</p>
-        <pre className="overflow-x-auto rounded-md border border-border bg-surface p-3 font-mono text-sm">
+        <pre className="overflow-x-auto border-2 border-ink bg-paper-raised p-4 font-mono text-sm shadow-hard-sm">
           {"User-agent: HangingAiBot\nDisallow: /"}
         </pre>
       </section>
