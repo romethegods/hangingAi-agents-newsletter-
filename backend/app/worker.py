@@ -19,13 +19,21 @@ from app.config import get_settings
 from app.db import SessionLocal
 from app.models import Source
 from app.scraping.browser import BrowserPool
-from app.scraping.crawler import Crawler, CrawlError
-from app.scraping.pipeline import IngestStats, save_items, save_tools
+from app.scraping.crawler import BlockedPage, Crawler, CrawlError, DisallowedByRobots
+from app.scraping.parsers.github import parse_repo_media
+from app.scraping.pipeline import (
+    IngestStats,
+    save_items,
+    save_repo_media,
+    save_tools,
+    tools_needing_media,
+)
 from app.scraping.rate_limit import DomainRateLimiter
 from app.scraping.registry import SOURCES, SOURCES_BY_SLUG, SourceDef
-from app.scraping.relevance import is_ai_related
+from app.scraping.relevance import is_ai_related, is_safe_for_work
 from app.scraping.robots import RobotsCache
 from app.scraping.scheduler import CrawlScheduler
+from app.scraping.types import RawItem, RawTool
 
 log = logging.getLogger("hangingai.worker")
 
@@ -54,6 +62,43 @@ async def sync_sources() -> dict[str, Source]:
     return {row.slug: row for row in rows}
 
 
+def _keep_item(item: RawItem, sdef: SourceDef) -> bool:
+    return is_ai_related(item.title, item.summary, mode=sdef.ai_filter) and is_safe_for_work(
+        item.title, item.summary
+    )
+
+
+def _keep_tool(tool: RawTool, sdef: SourceDef) -> bool:
+    text = (tool.full_name, tool.title, tool.description, " ".join(tool.topics))
+    return is_ai_related(*text, mode=sdef.ai_filter) and is_safe_for_work(*text, tags=tool.tags)
+
+
+MEDIA_JOB = "github-readme-media"
+MEDIA_BATCH = 20  # repo pages per run; hourly runs cover ~480 repos/day at ~2s/page
+
+
+async def scan_readme_media(crawler: Crawler, batch: int = MEDIA_BATCH) -> int:
+    """Load a batch of GitHub repo pages and record each README's best demo."""
+    async with SessionLocal() as session:
+        queue = await tools_needing_media(session, datetime.now(UTC), batch)
+    found = 0
+    for tool in queue:
+        try:
+            html = await crawler.get(tool.url)
+        except (DisallowedByRobots, BlockedPage) as exc:
+            log.warning("readme scan stopped at %s: %s", tool.full_name, exc)
+            break  # GitHub-wide problem; the rest of the batch would fail the same way
+        except Exception as exc:
+            log.warning("readme scan failed for %s: %s", tool.full_name, exc)
+            continue
+        media = parse_repo_media(html, tool.url)
+        found += media.demo is not None
+        async with SessionLocal() as session, session.begin():
+            await save_repo_media(session, tool.id, media, datetime.now(UTC))
+    log.info("%s ok: scanned=%d demos=%d", MEDIA_JOB, len(queue), found)
+    return found
+
+
 async def crawl_source(crawler: Crawler, sdef: SourceDef, source_id: int) -> IngestStats:
     now = datetime.now(UTC)
     try:
@@ -62,12 +107,8 @@ async def crawl_source(crawler: Crawler, sdef: SourceDef, source_id: int) -> Ing
         if not len(parsed):
             raise EmptyParse(f"{sdef.slug}: parser found 0 items; markup may have changed")
 
-        items = [i for i in parsed.items if is_ai_related(i.title, i.summary, mode=sdef.ai_filter)]
-        tools = [
-            t
-            for t in parsed.tools
-            if is_ai_related(t.full_name, t.description, " ".join(t.topics), mode=sdef.ai_filter)
-        ]
+        items = [i for i in parsed.items if _keep_item(i, sdef)]
+        tools = [t for t in parsed.tools if _keep_tool(t, sdef)]
         stats = IngestStats()
         async with SessionLocal() as session, session.begin():
             await save_items(session, source_id, items, now, stats)
@@ -126,9 +167,21 @@ async def run_once(slugs: list[str] | None = None) -> int:
             if isinstance(result, BaseException):
                 failures += 1
                 log.error("%s failed: %s", sdef.slug, result)
+        if not slugs:  # a full run also refreshes tool demos
+            await scan_readme_media(crawler)
     finally:
         browser.stop()
     return 1 if failures else 0
+
+
+async def run_media_once() -> int:
+    browser = _browser_from_settings()
+    await browser.start()
+    try:
+        await scan_readme_media(_build_crawler(browser))
+    finally:
+        browser.stop()
+    return 0
 
 
 async def run_forever() -> None:
@@ -143,6 +196,8 @@ async def run_forever() -> None:
         interval = timedelta(minutes=sdef.interval_minutes)
         wait = max(0.0, ((last + interval) - wall_now).total_seconds()) if last else 0.0
         scheduler.add(sdef.slug, interval.total_seconds(), mono_now + wait)
+    # After the first tool crawls have landed, then hourly.
+    scheduler.add(MEDIA_JOB, 3600, mono_now + 120)
 
     browser = _browser_from_settings()
     await browser.start()
@@ -150,7 +205,10 @@ async def run_forever() -> None:
 
     async def run_one(slug: str) -> None:
         try:
-            await crawl_source(crawler, SOURCES_BY_SLUG[slug], rows[slug].id)
+            if slug == MEDIA_JOB:
+                await scan_readme_media(crawler)
+            else:
+                await crawl_source(crawler, SOURCES_BY_SLUG[slug], rows[slug].id)
             succeeded = True
         except Exception as exc:
             log.error("%s failed: %s", slug, exc)
@@ -176,6 +234,9 @@ def main() -> None:
     parser.add_argument(
         "--source", action="append", choices=sorted(SOURCES_BY_SLUG), help="limit to source(s)"
     )
+    parser.add_argument(
+        "--media", action="store_true", help="only scan GitHub READMEs for demos, then exit"
+    )
     args = parser.parse_args()
     logging.basicConfig(
         level=get_settings().log_level, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
@@ -184,6 +245,8 @@ def main() -> None:
         logging.getLogger(noisy).setLevel(logging.WARNING)
     # nodriver manages its own event loop; asyncio.run() leaves Chrome's pipes dangling on exit.
     loop = nodriver.loop()
+    if args.media:
+        raise SystemExit(loop.run_until_complete(run_media_once()))
     if args.once:
         raise SystemExit(loop.run_until_complete(run_once(args.source)))
     loop.run_until_complete(run_forever())

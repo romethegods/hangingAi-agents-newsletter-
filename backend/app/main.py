@@ -5,11 +5,13 @@ from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy import func, or_, select, text, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api_limits import KeyedRateLimiter, Tier, is_exempt, parse_networks
 from app.config import get_settings
 from app.db import engine, get_session
 from app.models import Article, Source, Tool
@@ -23,9 +25,11 @@ from app.schemas import (
     ToolPage,
     TopicCount,
 )
-from app.scraping.types import ContentType
+from app.scraping.types import ContentType, Platform
 
 HOT_WINDOW = timedelta(hours=72)
+# Trending models keep trending for weeks after their last commit, unlike news.
+HOT_WINDOW_BY_TYPE = {ContentType.MODEL: timedelta(days=21)}
 HOT_CANDIDATES = 500
 
 Session = Annotated[AsyncSession, Depends(get_session)]
@@ -38,6 +42,39 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="HangingAi API", version="0.1.0", lifespan=lifespan)
+_settings = get_settings()
+app.state.rate_limiter = KeyedRateLimiter()
+app.state.rate_limit_exempt = parse_networks(_settings.rate_limit_exempt_networks)
+DEFAULT_TIER = Tier("api", _settings.rate_limit_per_minute, _settings.rate_limit_burst)
+SEARCH_TIER = Tier(
+    "search", _settings.rate_limit_search_per_minute, _settings.rate_limit_search_burst
+)
+
+
+@app.middleware("http")
+async def rate_limit(request: Request, call_next):
+    path = request.url.path
+    client = request.client.host if request.client else None
+    if (
+        not _settings.rate_limit_enabled
+        or not path.startswith("/api/")
+        or is_exempt(client, request.app.state.rate_limit_exempt)
+    ):
+        return await call_next(request)
+
+    tier = SEARCH_TIER if path == "/api/search" else DEFAULT_TIER
+    decision = request.app.state.rate_limiter.check(client or "unknown", tier)
+    if not decision.allowed:
+        return JSONResponse(
+            {"detail": "rate limit exceeded", "retry_after": decision.retry_after},
+            status_code=429,
+            headers=decision.headers(),
+        )
+    response = await call_next(request)
+    response.headers.update(decision.headers())
+    return response
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=get_settings().cors_origins,
@@ -92,7 +129,10 @@ async def feed(
         candidates = (
             (
                 await session.execute(
-                    query.where(Article.published_at >= now - HOT_WINDOW)
+                    query.where(
+                        Article.published_at
+                        >= now - HOT_WINDOW_BY_TYPE.get(content_type, HOT_WINDOW)
+                    )
                     .order_by(Article.published_at.desc())
                     .limit(HOT_CANDIDATES)
                 )
@@ -167,16 +207,22 @@ async def search(
 async def tools(
     session: Session,
     sort: ToolSort = ToolSort.TRENDING,
+    platform: Platform | None = None,
     topic: str | None = None,
     language: str | None = None,
+    has_demo: bool = False,
     limit: Annotated[int, Query(ge=1, le=100)] = 30,
     offset: Annotated[int, Query(ge=0, le=10_000)] = 0,
 ) -> ToolPage:
     query = select(Tool)
+    if platform:
+        query = query.where(Tool.platform == platform.value)
     if topic:
         query = query.where(Tool.topics.contains([topic.lower()]))
     if language:
         query = query.where(func.lower(Tool.language) == language.lower())
+    if has_demo:
+        query = query.where(Tool.demo_url.is_not(None))
     total = (await session.execute(select(func.count()).select_from(query.subquery()))).scalar_one()
     order = {
         ToolSort.TRENDING: (Tool.star_velocity.desc(), Tool.stars.desc()),
@@ -185,6 +231,14 @@ async def tools(
     }[sort]
     rows = await session.execute(query.order_by(*order, Tool.id).limit(limit).offset(offset))
     return ToolPage(items=[ToolOut.model_validate(t) for t in rows.scalars()], total=total)
+
+
+@app.get("/api/tools/{tool_id}", response_model=ToolOut)
+async def tool(tool_id: int, session: Session) -> Tool:
+    found = await session.get(Tool, tool_id)
+    if found is None:
+        raise HTTPException(404, "tool not found")
+    return found
 
 
 @app.get("/api/topics", response_model=list[TopicCount])

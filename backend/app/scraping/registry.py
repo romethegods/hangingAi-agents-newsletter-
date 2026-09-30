@@ -46,6 +46,13 @@ SOURCES: tuple[SourceDef, ...] = (
         interval_minutes=240,
     ),
     SourceDef(
+        slug="hf-spaces-trending",
+        name="Hugging Face Trending Spaces",
+        url="https://huggingface.co/spaces?sort=trending",
+        parser=huggingface.parse_spaces,
+        interval_minutes=240,
+    ),
+    SourceDef(
         slug="github-trending",
         name="GitHub Trending",
         url="https://github.com/trending?since=daily",
@@ -67,7 +74,7 @@ SOURCES: tuple[SourceDef, ...] = (
         slug="tmz",
         name="TMZ",
         url="https://www.tmz.com/",
-        parser=_cards(link_must_contain="tmz.com/20"),
+        parser=_cards(link_must_contain="tmz.com/20", image_size=("_xs.", "_md.")),
         interval_minutes=60,
         weight=0.6,
         ai_filter=AiFilter.STRICT,

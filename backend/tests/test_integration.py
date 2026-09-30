@@ -7,8 +7,15 @@ from sqlalchemy import func, select
 from app.db import get_session
 from app.main import app
 from app.models import Article, Source, Tool
-from app.scraping.pipeline import IngestStats, save_items, save_tools
-from app.scraping.types import ContentType, RawItem, RawTool
+from app.scraping.parsers.github import RepoMedia
+from app.scraping.pipeline import (
+    IngestStats,
+    save_items,
+    save_repo_media,
+    save_tools,
+    tools_needing_media,
+)
+from app.scraping.types import ContentType, Demo, DemoKind, Platform, RawItem, RawTool
 
 NOW = datetime.now(UTC)
 
@@ -209,3 +216,80 @@ async def test_tools_upsert_keeps_fields_and_ranks_by_velocity(session_factory, 
     by_topic = (await client.get("/api/tools", params={"topic": "ai-agents"})).json()
     assert by_topic["total"] == 1
     assert (await client.get("/api/topics")).json() == [{"topic": "ai-agents", "count": 1}]
+
+
+async def test_tool_demos_platforms_and_scan_queue(session_factory, client) -> None:
+    space = RawTool(
+        "acme/agent",  # same name as a GitHub repo: platforms keep them apart
+        "Try the agent live",
+        stars=40,
+        platform=Platform.HUGGINGFACE,
+        title="🤖 Acme Agent",
+        preview_image_url="https://cdn/spaces/acme/agent.png",
+        demo=Demo("https://acme-agent.hf.space", DemoKind.APP),
+    )
+    repos = [
+        RawTool("acme/agent", "An agent framework", "Python", stars=500),
+        RawTool("acme/quiet", "Low activity repo", "Go", stars=10),
+    ]
+    async with session_factory() as session, session.begin():
+        await save_tools(session, [*repos, space], NOW, IngestStats())
+
+    # Only GitHub tools are queued for README scans, never-scanned first.
+    async with session_factory() as session, session.begin():
+        queue = await tools_needing_media(session, NOW, limit=10)
+        assert {t.full_name for t in queue} == {"acme/agent", "acme/quiet"}
+        assert all(t.platform == "github" for t in queue)
+        agent = next(t for t in queue if t.full_name == "acme/agent")
+        demo = Demo("https://github.com/user-attachments/assets/abc", DemoKind.VIDEO)
+        await save_repo_media(session, agent.id, RepoMedia("https://og/acme", demo), NOW)
+        quiet = next(t for t in queue if t.full_name == "acme/quiet")
+        await save_repo_media(session, quiet.id, RepoMedia(None, None), NOW)  # nothing found
+
+    async with session_factory() as session, session.begin():
+        assert await tools_needing_media(session, NOW, limit=10) == []  # both scanned this week
+        assert len(await tools_needing_media(session, NOW + timedelta(days=8), limit=10)) == 2
+        # A later listing crawl (no media on the page) must not wipe the scanned demo.
+        await save_tools(session, [repos[0]], NOW + timedelta(hours=1), IngestStats())
+
+    with_demo = (await client.get("/api/tools", params={"has_demo": "true"})).json()
+    assert {(t["platform"], t["full_name"], t["demo_kind"]) for t in with_demo["items"]} == {
+        ("github", "acme/agent", "video"),
+        ("huggingface", "acme/agent", "app"),
+    }
+    spaces = (await client.get("/api/tools", params={"platform": "huggingface"})).json()
+    assert [t["title"] for t in spaces["items"]] == ["🤖 Acme Agent"]
+    detail = (await client.get(f"/api/tools/{spaces['items'][0]['id']}")).json()
+    assert detail["url"] == "https://huggingface.co/spaces/acme/agent"
+    assert detail["demo_url"] == "https://acme-agent.hf.space"
+    assert (await client.get("/api/tools/999999")).status_code == 404
+    assert (await client.get("/api/tools", params={"platform": "gitlab"})).status_code == 422
+
+
+async def test_recrawl_fills_in_missing_images(session_factory, source_id) -> None:
+    await ingest(
+        session_factory, source_id, [news("https://site.com/img", "A story without art yet")]
+    )
+    later = news("https://site.com/img", "A story without art yet")
+    later.image_url = "https://cdn/site/img.jpg"
+    await ingest(session_factory, source_id, [later])
+    async with session_factory() as session:
+        stored = (await session.execute(select(Article))).scalar_one()
+        assert stored.image_url == "https://cdn/site/img.jpg"
+
+
+async def test_hot_models_tab_looks_back_further_than_news(
+    session_factory, source_id, client
+) -> None:
+    model = RawItem(
+        url="https://huggingface.co/acme/older-model",
+        title="acme/older-model",
+        content_type=ContentType.MODEL,
+        published_at=NOW - timedelta(days=10),  # still trending, last commit 10 days ago
+        engagement=500,
+    )
+    await ingest(session_factory, source_id, [model])
+    models = (await client.get("/api/feed", params={"sort": "hot", "content_type": "model"})).json()
+    assert [a["title"] for a in models["items"]] == ["acme/older-model"]
+    mixed = (await client.get("/api/feed", params={"sort": "hot"})).json()
+    assert mixed["items"] == []  # the front page stays about the last 72 hours

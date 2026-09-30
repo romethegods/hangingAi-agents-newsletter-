@@ -20,6 +20,8 @@ class CardSelectors:
     image: str | None = "img[src]"
     # Only keep links whose absolute URL contains this (e.g. "/2026/" style article paths).
     link_must_contain: str | None = None
+    # (old, new) substring swap to request a larger image size, e.g. ("_xs.", "_md.").
+    image_size: tuple[str, str] | None = None
 
 
 def parse_cards(html: str, base_url: str, selectors: CardSelectors) -> ParseResult:
@@ -35,6 +37,9 @@ def parse_cards(html: str, base_url: str, selectors: CardSelectors) -> ParseResu
             continue
         seen.add(url)
         image = card.css_first(selectors.image) if selectors.image else None
+        image_url = absolute(base_url, image.attributes.get("src") if image else None)
+        if image_url and selectors.image_size:
+            image_url = image_url.replace(*selectors.image_size)
         result.items.append(
             RawItem(
                 url=url,
@@ -43,7 +48,7 @@ def parse_cards(html: str, base_url: str, selectors: CardSelectors) -> ParseResu
                 summary=text_of(card.css_first(selectors.summary), limit=400)
                 if selectors.summary
                 else None,
-                image_url=absolute(base_url, image.attributes.get("src") if image else None),
+                image_url=image_url,
                 published_at=date_from_url(url),
             )
         )

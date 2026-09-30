@@ -40,3 +40,19 @@ def is_ai_related(*texts: str | None, mode: AiFilter = AiFilter.STRICT) -> bool:
     if _ACRONYMS.search(text) or _STRICT_TERMS.search(text):
         return True
     return mode is AiFilter.BROAD and bool(_BROAD_TERMS.search(text))
+
+
+# Trending lists on open hubs regularly include adult models and apps. HangingAi
+# embeds live demos, so anything flagged or named like this is dropped at ingest.
+_NSFW_TAGS = frozenset({"not-for-all-audiences", "nsfw"})
+_NSFW_TERMS = re.compile(
+    r"(?<![a-z])(nsfw|uncensored|nude|nudity|naked|porn\w*|hentai|lewd|erotic\w*|18\+|xxx|onlyfans"
+    r"|undress\w*)(?![a-z])",
+    re.IGNORECASE,
+)
+
+
+def is_safe_for_work(*texts: str | None, tags: list[str] | tuple[str, ...] = ()) -> bool:
+    if any(tag.lower() in _NSFW_TAGS for tag in tags):
+        return False
+    return not _NSFW_TERMS.search(" ".join(t for t in texts if t))

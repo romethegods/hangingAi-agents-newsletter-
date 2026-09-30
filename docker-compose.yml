@@ -25,7 +25,9 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://hanging:${POSTGRES_PASSWORD:-hanging}@db:5432/hanging
     ports:
-      - "8000:8000"
+      # Host-local only, for debugging. Public traffic must come through the reverse proxy,
+      # which sets X-Forwarded-For; clients must never reach the API directly.
+      - "127.0.0.1:8000:8000"
     depends_on:
       db:
         condition: service_healthy

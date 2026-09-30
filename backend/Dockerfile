@@ -22,4 +22,8 @@ USER hanging
 
 EXPOSE 8000
 # Migrations run on boot; safe while the API runs as a single instance.
-CMD ["sh", "-c", "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT} --proxy-headers --forwarded-allow-ips='*'"]
+# X-Forwarded-For is only trusted from FORWARDED_ALLOW_IPS (our reverse proxy). Trusting it
+# from everyone would let clients fake their IP, dodging rate limits or claiming the
+# internal-network exemption.
+ENV FORWARDED_ALLOW_IPS=127.0.0.1
+CMD ["sh", "-c", "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT} --proxy-headers --forwarded-allow-ips=${FORWARDED_ALLOW_IPS}"]

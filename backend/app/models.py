@@ -14,15 +14,21 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     func,
     text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, TSVECTOR
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
-from app.scraping.types import ContentType
+from app.scraping.types import ContentType, DemoKind, Platform
 
-CONTENT_TYPES = ", ".join(f"'{c.value}'" for c in ContentType)
+
+def _sql_in(values) -> str:
+    return ", ".join(f"'{v.value}'" for v in values)
+
+
+CONTENT_TYPES = _sql_in(ContentType)
 
 
 class Base(DeclarativeBase):
@@ -92,25 +98,41 @@ class Article(Base):
 
 
 class Tool(Base):
-    """Open-source repositories (AI agents, LLM tooling, MCP servers...)."""
+    """Open-source AI tools: GitHub repos and Hugging Face Spaces (live demo apps)."""
 
     __tablename__ = "tools"
     __table_args__ = (
+        UniqueConstraint("platform", "full_name", name="uq_tools_platform_full_name"),
+        CheckConstraint(f"platform IN ({_sql_in(Platform)})", name="ck_tools_platform"),
+        CheckConstraint(f"demo_kind IN ({_sql_in(DemoKind)})", name="ck_tools_demo_kind"),
         Index("ix_tools_velocity", text("star_velocity DESC")),
         Index("ix_tools_stars", text("stars DESC")),
         Index("ix_tools_topics", "topics", postgresql_using="gin"),
+        # README scan queue: GitHub tools never scanned, or scanned longest ago.
+        Index(
+            "ix_tools_media_queue",
+            "media_checked_at",
+            postgresql_where=text("platform = 'github'"),
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    full_name: Mapped[str] = mapped_column(String(200), unique=True)
+    platform: Mapped[str] = mapped_column(String(16), server_default=text("'github'"))
+    full_name: Mapped[str] = mapped_column(String(200))
+    title: Mapped[str | None] = mapped_column(String(300))
     url: Mapped[str] = mapped_column(Text)
     description: Mapped[str | None] = mapped_column(Text)
     language: Mapped[str | None] = mapped_column(String(64))
-    stars: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    stars: Mapped[int] = mapped_column(Integer, server_default=text("0"))  # likes for HF Spaces
     forks: Mapped[int | None] = mapped_column(Integer)
     topics: Mapped[list[str]] = mapped_column(ARRAY(String(64)), server_default=text("'{}'"))
-    star_velocity: Mapped[float] = mapped_column(Float, server_default=text("0"))  # stars/day
+    star_velocity: Mapped[float] = mapped_column(Float, server_default=text("0"))  # per day
     pushed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Demos are hotlinked/embedded from the source, never re-hosted.
+    preview_image_url: Mapped[str | None] = mapped_column(Text)
+    demo_url: Mapped[str | None] = mapped_column(Text)
+    demo_kind: Mapped[str | None] = mapped_column(String(16))
+    media_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     first_seen_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

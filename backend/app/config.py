@@ -14,6 +14,23 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["http://localhost:3000"]
     log_level: str = "INFO"
 
+    # Public API rate limits, per client IP.
+    rate_limit_enabled: bool = True
+    rate_limit_per_minute: float = 120
+    rate_limit_burst: int = 60
+    rate_limit_search_per_minute: float = 30  # full-text search is the most expensive query
+    rate_limit_search_burst: int = 10
+    # Direct callers from these networks skip limits: our own web server calls the API
+    # over the private Docker network. Public traffic arrives via Caddy with the real
+    # client IP (X-Forwarded-For), so it is limited.
+    rate_limit_exempt_networks: list[str] = [
+        "127.0.0.0/8",
+        "::1/128",
+        "10.0.0.0/8",
+        "172.16.0.0/12",
+        "192.168.0.0/16",
+    ]
+
     # Scraper
     browser_headless: bool = True
     browser_sandbox: bool = True  # must be False when Chrome runs as root in a container

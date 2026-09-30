@@ -5,9 +5,9 @@ import pytest
 from app.ranking import diversified_top_k, hot_score, star_velocity, top_k
 from app.scraping.canonical import canonicalize_url, url_hash
 from app.scraping.minhash import MinHashLSH, minhash, similarity
-from app.scraping.rate_limit import TokenBucket
-from app.scraping.relevance import AiFilter, is_ai_related
+from app.scraping.relevance import AiFilter, is_ai_related, is_safe_for_work
 from app.scraping.scheduler import CrawlScheduler
+from app.token_bucket import TokenBucket
 
 NOW = datetime(2026, 9, 28, 12, tzinfo=UTC)
 
@@ -146,6 +146,25 @@ def test_relevance_filter(text: str, strict: bool, broad: bool) -> None:
     assert is_ai_related(text, mode=AiFilter.STRICT) is strict
     assert is_ai_related(text, mode=AiFilter.BROAD) is broad
     assert is_ai_related(text, mode=AiFilter.NONE)
+
+
+@pytest.mark.parametrize(
+    "text, safe",
+    [
+        ("abenzerps/Qwen-Image-2.1-Uncensored-GGUF", False),
+        ("Pepe104/MiniMax-H3-Turbo-Lora-UNCENSORED", False),
+        ("NSFW image generator", False),
+        ("Qwen/Qwen-Image-2.1", True),
+        ("Strip whitespace from LLM output", True),
+        ("Stripe payments agent", True),
+    ],
+)
+def test_safe_for_work_filter(text: str, safe: bool) -> None:
+    assert is_safe_for_work(text) is safe
+
+
+def test_safe_for_work_honors_hub_content_tags() -> None:
+    assert not is_safe_for_work("Harmless title", tags=["gradio", "not-for-all-audiences"])
 
 
 # --- ranking --------------------------------------------------------------

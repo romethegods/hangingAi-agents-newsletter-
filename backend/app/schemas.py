@@ -46,7 +46,9 @@ class FeedPage(BaseModel):
 
 class ToolOut(_Out):
     id: int
+    platform: str
     full_name: str
+    title: str | None
     url: str
     description: str | None
     language: str | None
@@ -54,6 +56,9 @@ class ToolOut(_Out):
     star_velocity: float
     topics: list[str]
     pushed_at: datetime | None
+    preview_image_url: str | None
+    demo_url: str | None
+    demo_kind: str | None
 
 
 class ToolPage(BaseModel):
