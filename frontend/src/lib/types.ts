@@ -30,9 +30,14 @@ export interface FeedPage {
   next_cursor: string | null;
 }
 
+export type Platform = "github" | "huggingface";
+export type DemoKind = "video" | "embed" | "gif" | "image" | "app";
+
 export interface Tool {
   id: number;
+  platform: Platform;
   full_name: string;
+  title: string | null;
   url: string;
   description: string | null;
   language: string | null;
@@ -40,6 +45,9 @@ export interface Tool {
   star_velocity: number;
   topics: string[];
   pushed_at: string | null;
+  preview_image_url: string | null;
+  demo_url: string | null;
+  demo_kind: DemoKind | null;
 }
 
 export interface ToolPage {

@@ -9,8 +9,8 @@ export const metadata: Metadata = {
 };
 
 const SOURCES = [
-  ["Hugging Face", "Daily Papers and trending models"],
-  ["GitHub", "Trending repositories and the ai-agents, llm, mcp and rag topics"],
+  ["Hugging Face", "Daily Papers, trending models, and trending Spaces (live demo apps)"],
+  ["GitHub", "Trending repositories, the ai-agents, llm, mcp and rag topics, and README demos"],
   ["News outlets", "AI stories only, filtered from general coverage"],
 ];
 
@@ -37,7 +37,9 @@ export default function AboutPage() {
         </ul>
         <p className="text-muted">
           We store headlines, short summaries and links. Every item points back to the original
-          publisher; we never republish full articles.
+          publisher; we never republish full articles. Images and demos load straight from where
+          their creators published them (YouTube&apos;s player, Hugging Face Spaces, GitHub); we
+          never download or re-host them.
         </p>
       </section>
 

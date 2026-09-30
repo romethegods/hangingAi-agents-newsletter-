@@ -49,6 +49,12 @@ export function engagementLabel(article: Pick<Article, "content_type" | "engagem
   }
 }
 
+export const CONTENT_TYPE_LONG: Record<Article["content_type"], string> = {
+  news: "In the news",
+  paper: "Research paper",
+  model: "Trending model",
+};
+
 export const CONTENT_TYPE_LABEL: Record<Article["content_type"], string> = {
   news: "News",
   paper: "Paper",

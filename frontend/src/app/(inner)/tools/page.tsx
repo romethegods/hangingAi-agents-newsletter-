@@ -8,7 +8,7 @@ import { CardGridSkeleton } from "@/components/Skeleton";
 import { Tabs } from "@/components/Tabs";
 import { ToolCard } from "@/components/ToolCard";
 import { getTools, getTopics } from "@/lib/api";
-import type { ToolSort } from "@/lib/types";
+import type { Platform, ToolSort } from "@/lib/types";
 import { oneOf, param, positiveInt, withQuery } from "@/lib/url";
 import { requestNow } from "@/lib/time";
 
@@ -19,6 +19,11 @@ export const metadata: Metadata = {
 };
 
 const PAGE_SIZE = 30;
+const SOURCES: { key: "all" | Platform; label: string }[] = [
+  { key: "all", label: "All sources" },
+  { key: "github", label: "GitHub" },
+  { key: "huggingface", label: "HF Spaces" },
+];
 const SORTS: { key: ToolSort; label: string }[] = [
   { key: "trending", label: "Trending" },
   { key: "stars", label: "Most stars" },
@@ -29,8 +34,8 @@ export default function ToolsPage({ searchParams }: PageProps<"/tools">) {
   return (
     <div>
       <PageHeader kicker="Section B · The tools desk" title="Open-source AI tools">
-        Agents, LLM frameworks, MCP servers and more, ranked by the stars they&apos;re gaining
-        each day.
+        Agents, LLM frameworks, MCP servers and live demo apps, ranked by the stars and likes
+        they&apos;re gaining each day. Press play on any demo.
       </PageHeader>
       <Suspense fallback={<CardGridSkeleton />}>
         <ToolsDirectory searchParams={searchParams} />
@@ -47,10 +52,23 @@ async function ToolsDirectory({ searchParams }: Pick<PageProps<"/tools">, "searc
     "trending",
   );
   const topic = param(query, "topic")?.toLowerCase();
+  const source = oneOf(
+    param(query, "source"),
+    SOURCES.map((s) => s.key),
+    "all",
+  );
+  const demos = param(query, "demos") === "1";
   const page = positiveInt(param(query, "page"));
 
   const [tools, topics] = await Promise.all([
-    getTools({ sort, topic, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }),
+    getTools({
+      sort,
+      topic,
+      platform: source === "all" ? undefined : source,
+      has_demo: demos,
+      limit: PAGE_SIZE,
+      offset: (page - 1) * PAGE_SIZE,
+    }),
     getTopics(),
   ]);
   const now = await requestNow();
@@ -58,6 +76,8 @@ async function ToolsDirectory({ searchParams }: Pick<PageProps<"/tools">, "searc
   const href = (overrides: Record<string, string | number | undefined>) =>
     withQuery("/tools", {
       sort: sort === "trending" ? undefined : sort,
+      source: source === "all" ? undefined : source,
+      demos: demos ? 1 : undefined,
       topic,
       ...overrides,
     });
@@ -73,6 +93,21 @@ async function ToolsDirectory({ searchParams }: Pick<PageProps<"/tools">, "searc
           href: href({ sort: s.key === "trending" ? undefined : s.key, page: undefined }),
         }))}
       />
+
+      <div className="flex flex-wrap items-center gap-3">
+        <Tabs
+          label="Filter by source"
+          active={source}
+          tabs={SOURCES.map((s) => ({
+            key: s.key,
+            label: s.label,
+            href: href({ source: s.key === "all" ? undefined : s.key, page: undefined }),
+          }))}
+        />
+        <TopicChip href={href({ demos: demos ? undefined : 1, page: undefined })} active={demos}>
+          ▶ With demos only
+        </TopicChip>
+      </div>
 
       <nav aria-label="Filter by topic" className="flex flex-wrap gap-2">
         <TopicChip href={href({ topic: undefined, page: undefined })} active={!topic}>

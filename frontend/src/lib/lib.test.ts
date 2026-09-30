@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { compactNumber, edition, engagementLabel, hostname, timeAgo } from "./format";
+import { displayName, hasPlayableDemo, popularity, previewImage } from "./tools";
+import type { Tool } from "./types";
 import { oneOf, param, positiveInt, withQuery } from "./url";
 
 const NOW = Date.parse("2026-09-28T12:00:00Z");
@@ -68,5 +70,49 @@ describe("edition", () => {
     expect(edition(Date.parse("2026-09-29T01:00:00Z")).number).toBe(1);
     expect(edition(Date.parse("2026-09-29T12:00:00Z")).number).toBe(2);
     expect(edition(Date.parse("2027-09-28T12:00:00Z"))).toMatchObject({ volume: 2, number: 366 });
+  });
+});
+
+describe("tool helpers", () => {
+  const base: Tool = {
+    id: 1,
+    platform: "github",
+    full_name: "acme/agent",
+    title: null,
+    url: "https://github.com/acme/agent",
+    description: null,
+    language: null,
+    stars: 42444,
+    star_velocity: 0,
+    topics: [],
+    pushed_at: null,
+    preview_image_url: null,
+    demo_url: null,
+    demo_kind: null,
+  };
+
+  it("uses real previews only, never GitHub's generated text cards", () => {
+    expect(previewImage(base)).toBeNull(); // caller shows our ToolPoster
+    expect(previewImage({ ...base, preview_image_url: "https://x/p.png" })).toBe("https://x/p.png");
+    expect(
+      previewImage({ ...base, preview_image_url: "https://opengraph.githubassets.com/abc/acme/agent" }),
+    ).toBeNull();
+    expect(
+      previewImage({
+        ...base,
+        demo_kind: "embed",
+        demo_url: "https://www.youtube-nocookie.com/embed/1p-SMEiK6Kg",
+      }),
+    ).toBe("https://i.ytimg.com/vi/1p-SMEiK6Kg/hqdefault.jpg");
+  });
+
+  it("labels popularity by platform and treats screenshots as non-playable", () => {
+    expect(popularity(base)).toBe("★ 42.4K");
+    expect(popularity({ ...base, platform: "huggingface" })).toBe("♥ 42.4K");
+    expect(displayName({ ...base, title: "🤖 Acme" })).toBe("🤖 Acme");
+    expect(displayName(base)).toBe("agent");
+    expect(hasPlayableDemo({ ...base, demo_kind: "image" })).toBe(false);
+    expect(hasPlayableDemo({ ...base, demo_kind: "embed" })).toBe(true);
+    expect(hasPlayableDemo(base)).toBe(false);
   });
 });

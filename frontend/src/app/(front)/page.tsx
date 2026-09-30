@@ -3,15 +3,16 @@ import { connection } from "next/server";
 import { Suspense } from "react";
 
 import { EmptyState } from "@/components/EmptyState";
-import { FeedItem, LeadStory } from "@/components/FeedItem";
+import { FeedItem, LeadStory, StoryCard } from "@/components/FeedItem";
 import { RankMark } from "@/components/Geometry";
 import { SectionHeader } from "@/components/SectionHeader";
 import { FeedSkeleton } from "@/components/Skeleton";
 import { Tabs } from "@/components/Tabs";
-import { StarVelocity, ToolName } from "@/components/ToolCard";
+import { DemoReelCard, StarVelocity, ToolName } from "@/components/ToolCard";
 import { getFeed, getTools } from "@/lib/api";
 import { compactNumber } from "@/lib/format";
 import { requestNow } from "@/lib/time";
+import { hasPlayableDemo } from "@/lib/tools";
 import type { ContentType, FeedSort } from "@/lib/types";
 import { oneOf, param, withQuery } from "@/lib/url";
 
@@ -28,15 +29,15 @@ const TAB_KEYS = Object.keys(FEED_TABS) as TabKey[];
 
 export default function Home({ searchParams }: PageProps<"/">) {
   return (
-    <div className="grid gap-12 lg:grid-cols-[minmax(0,1fr)_300px]">
+    <div className="grid gap-14 lg:grid-cols-[minmax(0,1fr)_280px]">
       <section aria-label="AI news feed">
         <Suspense fallback={<FeedSkeleton />}>
           <HomeFeed searchParams={searchParams} />
         </Suspense>
       </section>
       <aside aria-labelledby="leaderboard-heading">
-        <SectionHeader number={3} title="The Leaderboard" id="leaderboard-heading" />
-        <p className="kicker mb-4 text-muted">Open-source tools gaining stars fastest</p>
+        <SectionHeader number={4} title="The Leaderboard" id="leaderboard-heading" />
+        <p className="kicker mb-4 text-muted">Fastest-rising open-source tools</p>
         <Suspense fallback={<FeedSkeleton rows={6} />}>
           <Leaderboard />
         </Suspense>
@@ -68,7 +69,7 @@ async function HomeFeed({ searchParams }: Pick<PageProps<"/">, "searchParams">) 
   const showLead = tab === "top" && !cursor && lead;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-14">
       <Tabs tabs={tabs} active={tab} label="Feed sections" />
 
       {page.items.length === 0 ? (
@@ -76,11 +77,29 @@ async function HomeFeed({ searchParams }: Pick<PageProps<"/">, "searchParams">) 
       ) : showLead ? (
         <>
           <LeadStory article={lead} now={now} />
+          <section aria-labelledby="reel-heading">
+            <SectionHeader
+              number={2}
+              title="Demo reel"
+              id="reel-heading"
+              aside={
+                <Link
+                  href="/tools?demos=1"
+                  className="kicker font-semibold whitespace-nowrap hover:text-tomato"
+                >
+                  All demos →
+                </Link>
+              }
+            />
+            <Suspense fallback={<div className="h-40 animate-pulse bg-hairline" />}>
+              <DemoReel />
+            </Suspense>
+          </section>
           <section aria-labelledby="issue-heading">
-            <SectionHeader number={2} title="In this issue" id="issue-heading" />
-            <div className="grid gap-x-8 md:grid-cols-2">
+            <SectionHeader number={3} title="In this issue" id="issue-heading" />
+            <div className="grid gap-x-8 gap-y-12 md:grid-cols-2">
               {rest.map((article, i) => (
-                <FeedItem key={article.id} article={article} now={now} rank={i + 2} compact />
+                <StoryCard key={article.id} article={article} now={now} rank={i + 2} />
               ))}
             </div>
           </section>
@@ -117,6 +136,24 @@ async function HomeFeed({ searchParams }: Pick<PageProps<"/">, "searchParams">) 
   );
 }
 
+async function DemoReel() {
+  await connection();
+  // Two playable GitHub demos (video/GIF) and two live HF apps, hottest first.
+  const [github, spaces] = await Promise.all([
+    getTools({ sort: "trending", platform: "github", has_demo: true, limit: 24 }),
+    getTools({ sort: "trending", platform: "huggingface", has_demo: true, limit: 2 }),
+  ]);
+  const reel = [...github.items.filter(hasPlayableDemo).slice(0, 2), ...spaces.items];
+  if (reel.length === 0) return <p className="text-sm text-muted">Demos appear after the next crawl.</p>;
+  return (
+    <div className="grid gap-x-8 gap-y-10 sm:grid-cols-2">
+      {reel.map((tool) => (
+        <DemoReelCard key={tool.id} tool={tool} />
+      ))}
+    </div>
+  );
+}
+
 async function Leaderboard() {
   await connection(); // request-time only, so builds don't depend on the API
   const { items } = await getTools({ sort: "trending", limit: 8 });
@@ -128,14 +165,13 @@ async function Leaderboard() {
           <li key={tool.id} className="flex items-start gap-3">
             <RankMark rank={i + 1} />
             <div className="min-w-0 text-sm">
-              <a
-                href={tool.url}
-                target="_blank"
-                rel="noopener"
-                className="font-semibold break-words hover:text-tomato"
+              <Link
+                href={`/tools/${tool.id}`}
+                title={tool.full_name}
+                className="block truncate font-semibold hover:text-tomato"
               >
                 <ToolName fullName={tool.full_name} />
-              </a>
+              </Link>
               <div className="mt-1 flex items-center gap-2 font-mono text-[11px] text-muted">
                 <span>★ {compactNumber(tool.stars)}</span>
                 <StarVelocity perDay={tool.star_velocity} />

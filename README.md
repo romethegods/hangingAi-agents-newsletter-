@@ -29,9 +29,15 @@ that matter and ranked for each reader. Newsletter + website + public API.
 
 | Source | Status |
 |---|---|
-| Hugging Face Daily Papers, Trending Models | ✅ |
+| Hugging Face Daily Papers, Trending Models (with preview images) | ✅ |
+| Hugging Face Trending Spaces (live demo apps, embeddable) | ✅ |
 | GitHub Trending (AI-filtered), topics: ai-agents, llm, mcp, rag | ✅ |
+| GitHub README demos (video, YouTube, GIF, screenshot), 20 repos/hour | ✅ |
 | TMZ (AI stories only) | ✅ |
+
+Every source passes a safe-for-work filter (hub content tags + keywords). Images and demos are
+hotlinked or embedded from their source (YouTube via youtube-nocookie, Spaces via hf.space);
+nothing is downloaded or re-hosted.
 | CNN Tech | ⛔ disabled: blocks headless browsers, RSS is dead. We don't bypass bot protection |
 
 ## Local development
@@ -43,7 +49,8 @@ cd backend
 uv sync
 cp ../.env.example ../.env           # then point DATABASE_URL at a Postgres 16
 uv run alembic upgrade head
-uv run python -m app.worker --once   # scrape everything once
+uv run python -m app.worker --once   # scrape everything once (+ one README demo batch)
+uv run python -m app.worker --media  # only scan GitHub READMEs for demos
 uv run uvicorn app.main:app --reload # http://localhost:8000/docs
 ```
 
@@ -71,10 +78,17 @@ When a site redesign breaks a parser test, re-capture its fixture:
 | `GET /api/feed?sort=latest\|hot&content_type=news\|paper\|model&cursor=` | Feed; `latest` is cursor-paginated |
 | `GET /api/articles/{id}` | One item, plus the same story from other outlets |
 | `GET /api/search?q=` | Full-text search (title weighted over summary) |
-| `GET /api/tools?sort=trending\|stars\|new&topic=&language=` | Open-source tools directory |
+| `GET /api/tools?sort=trending\|stars\|new&platform=github\|huggingface&has_demo=&topic=` | Tools directory |
+| `GET /api/tools/{id}` | One tool, with its demo |
 | `GET /api/topics` | Most common tool topics, for filter chips |
 | `GET /api/sources` | Crawl health: last run, last error, failure streak |
 | `GET /health` | Liveness + DB check |
+
+**Rate limits** (per client IP, token bucket): 120 requests/min with bursts of 60 for `/api/*`,
+and 30/min with bursts of 10 for `/api/search`. Every response carries `RateLimit-Limit`,
+`RateLimit-Remaining` and `RateLimit-Reset`; refusals are `429` with `Retry-After`. Our own
+web server calls the API over the private network and is exempt. Configure with the
+`RATE_LIMIT_*` settings in `backend/app/config.py`.
 
 ## Roadmap
 

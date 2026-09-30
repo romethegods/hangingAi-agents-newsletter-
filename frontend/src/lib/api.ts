@@ -14,6 +14,8 @@ import type {
   ContentType,
   FeedPage,
   FeedSort,
+  Platform,
+  Tool,
   ToolPage,
   ToolSort,
   Article,
@@ -69,6 +71,8 @@ export async function searchArticles(q: string): Promise<Article[]> {
 
 export async function getTools(query: {
   sort: ToolSort;
+  platform?: Platform;
+  has_demo?: boolean;
   topic?: string;
   language?: string;
   limit?: number;
@@ -76,7 +80,18 @@ export async function getTools(query: {
 }): Promise<ToolPage> {
   "use cache";
   cacheLife("minutes");
-  return get<ToolPage>("/api/tools", query);
+  return get<ToolPage>("/api/tools", { ...query, has_demo: query.has_demo ? "true" : undefined });
+}
+
+export async function getTool(id: number): Promise<Tool | null> {
+  "use cache";
+  cacheLife("minutes");
+  try {
+    return await get<Tool>(`/api/tools/${id}`);
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) return null;
+    throw error;
+  }
 }
 
 export async function getTopics(limit = 16): Promise<TopicCount[]> {

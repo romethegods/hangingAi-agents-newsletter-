@@ -5,9 +5,10 @@ import { Suspense } from "react";
 
 import { ArticleMeta, FeedItem } from "@/components/FeedItem";
 import { SectionHeader } from "@/components/SectionHeader";
+import { RemoteImage } from "@/components/RemoteImage";
 import { FeedSkeleton } from "@/components/Skeleton";
 import { getArticle } from "@/lib/api";
-import { hostname } from "@/lib/format";
+import { CONTENT_TYPE_LONG, hostname } from "@/lib/format";
 import type { ArticleDetail } from "@/lib/types";
 import { requestNow } from "@/lib/time";
 
@@ -61,14 +62,32 @@ async function Item({ params }: Pick<PageProps<"/item/[id]">, "params">) {
         ← Front page
       </Link>
       <header className="mt-6 space-y-5 border-b-[3px] border-ink pb-6">
-        <p className="kicker text-tomato">{article.source.name}</p>
+        <p className="kicker text-tomato">{CONTENT_TYPE_LONG[article.content_type]}</p>
         <h1 className="font-display text-4xl leading-[1.05] font-black tracking-tight sm:text-5xl">
           {article.title}
         </h1>
-        <ArticleMeta article={article} now={now} />
+        <ArticleMeta article={article} now={now} full />
       </header>
+      {article.image_url && (
+        <div className="mt-6">
+          <RemoteImage
+            src={article.image_url}
+            alt=""
+            sizes="(min-width: 768px) 768px, 100vw"
+            position={article.content_type === "paper" ? "top" : "center"}
+            priority
+          />
+        </div>
+      )}
       {article.summary && (
-        <p className="mt-6 text-lg leading-relaxed first-letter:float-left first-letter:mt-1 first-letter:mr-3 first-letter:font-display first-letter:text-6xl first-letter:leading-[0.8] first-letter:font-black first-letter:text-tomato">
+        // Drop cap only on a real paragraph; on "text-classification" it just breaks the word.
+        <p
+          className={`mt-6 flow-root text-lg leading-relaxed ${
+            article.summary.length > 160
+              ? "first-letter:float-left first-letter:mt-1 first-letter:mr-3 first-letter:font-display first-letter:text-6xl first-letter:leading-[0.8] first-letter:font-black first-letter:text-tomato"
+              : ""
+          }`}
+        >
           {article.summary}
         </p>
       )}
