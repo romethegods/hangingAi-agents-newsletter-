@@ -2,6 +2,8 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   cacheComponents: true,
+  // Self-contained server bundle for the Docker image (only the files it needs).
+  output: "standalone",
   // Third-party thumbnails and demos load straight from their source. We never
   // proxy or cache other people's media on our server (no re-hosting, and no
   // image-optimizer bandwidth on the VM).

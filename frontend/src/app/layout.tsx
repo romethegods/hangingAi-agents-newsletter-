@@ -55,6 +55,16 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
                   Our crawler
                 </Link>
               </li>
+              <li>
+                <Link href="/privacy" className="hover:text-ink">
+                  Privacy
+                </Link>
+              </li>
+              <li>
+                <Link href="/terms" className="hover:text-ink">
+                  Terms
+                </Link>
+              </li>
             </ul>
           </div>
         </footer>

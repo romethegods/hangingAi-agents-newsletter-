@@ -37,6 +37,7 @@ jobs:
       - uses: actions/checkout@v4
       - run: docker build -f backend/Dockerfile backend
       - run: docker build -f backend/Dockerfile.worker backend
+      - run: docker build -f frontend/Dockerfile --build-arg NEXT_SERVER_ACTIONS_ENCRYPTION_KEY=$(openssl rand -base64 32) frontend
 
   frontend:
     runs-on: ubuntu-latest

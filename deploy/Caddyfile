@@ -1,0 +1,48 @@
+# HTTPS (automatic Let's Encrypt certificates), routing and security headers.
+# SITE_DOMAIN and ACME_EMAIL come from .env.
+{
+	email {$ACME_EMAIL}
+}
+
+www.{$SITE_DOMAIN} {
+	redir https://{$SITE_DOMAIN}{uri} permanent
+}
+
+{$SITE_DOMAIN} {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Frame-Options "SAMEORIGIN"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		-Server
+	}
+	request_body {
+		max_size 1MB
+	}
+
+	# Live Arena streams: never compress or buffer, or answers arrive all at once.
+	@stream path /arena/stream/* /api/arena/battles/*/stream
+	handle @stream {
+		@api path /api/*
+		reverse_proxy @api api:8000 {
+			flush_interval -1
+		}
+		reverse_proxy web:3000 {
+			flush_interval -1
+		}
+	}
+
+	handle /api/* {
+		encode zstd gzip
+		reverse_proxy api:8000
+	}
+
+	handle {
+		encode zstd gzip
+		# Pages stream too (loading skeletons first, then content).
+		reverse_proxy web:3000 {
+			flush_interval -1
+		}
+	}
+}

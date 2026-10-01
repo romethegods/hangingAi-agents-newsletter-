@@ -9,5 +9,9 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${SITE_URL}/`, changeFrequency: "hourly", priority: 1 },
     { url: `${SITE_URL}/tools`, changeFrequency: "daily", priority: 0.8 },
     { url: `${SITE_URL}/about`, changeFrequency: "monthly", priority: 0.3 },
+    { url: `${SITE_URL}/arena`, changeFrequency: "daily", priority: 0.7 },
+    { url: `${SITE_URL}/arena/leaderboard`, changeFrequency: "daily", priority: 0.5 },
+    { url: `${SITE_URL}/privacy`, changeFrequency: "yearly", priority: 0.1 },
+    { url: `${SITE_URL}/terms`, changeFrequency: "yearly", priority: 0.1 },
   ];
 }

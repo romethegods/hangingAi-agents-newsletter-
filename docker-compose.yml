@@ -1,11 +1,26 @@
-# Runs the whole backend: locally now, and on the Google Cloud VM later.
-#   docker compose up --build
+# The whole site on one machine: Caddy (HTTPS) -> web (Next.js) and api (FastAPI),
+# plus the scraper/brief worker and Postgres.
+#   docker compose up -d --build
+# Settings come from .env (see .env.example).
+
+x-logging: &logging
+  logging:
+    driver: json-file
+    options:
+      max-size: 10m  # rotate, so logs can't fill the disk
+      max-file: "5"
+
+x-backend-env: &backend-env
+  DATABASE_URL: postgresql+psycopg://hanging:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/hanging
+  SITE_URL: ${SITE_URL:?set SITE_URL in .env}
+  CORS_ORIGINS: '["${SITE_URL:?set SITE_URL in .env}"]'
+
 services:
   db:
-    image: pgvector/pgvector:pg16  # plain Postgres 16 + the vector extension we'll need in M2
+    image: pgvector/pgvector:pg16  # Postgres 16 + the vector extension we'll need in M2
     environment:
       POSTGRES_USER: hanging
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hanging}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: hanging
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -14,6 +29,7 @@ services:
       interval: 5s
       retries: 10
     restart: unless-stopped
+    <<: *logging
 
   api:
     build:
@@ -23,20 +39,22 @@ services:
       - path: .env
         required: false
     environment:
-      DATABASE_URL: postgresql+psycopg://hanging:${POSTGRES_PASSWORD:-hanging}@db:5432/hanging
+      <<: *backend-env
+      # Only Caddy and the web container can reach the API (it isn't published to the
+      # internet), so forwarded client IPs from them are trusted.
+      FORWARDED_ALLOW_IPS: "*"
     ports:
-      # Host-local only, for debugging. Public traffic must come through the reverse proxy,
-      # which sets X-Forwarded-For; clients must never reach the API directly.
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:8000:8000"  # host-local only, for debugging over SSH
     depends_on:
       db:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 10s
-      start_period: 20s
+      start_period: 30s
       retries: 5
     restart: unless-stopped
+    <<: *logging
 
   worker:
     build:
@@ -46,12 +64,55 @@ services:
       - path: .env
         required: false
     environment:
-      DATABASE_URL: postgresql+psycopg://hanging:${POSTGRES_PASSWORD:-hanging}@db:5432/hanging
+      <<: *backend-env
     shm_size: 1gb  # Chrome crashes with Docker's default 64 MB /dev/shm
     depends_on:
       api:
-        condition: service_healthy  # api has finished running migrations
+        condition: service_healthy  # the API has finished running migrations
     restart: unless-stopped
+    <<: *logging
+
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        SITE_URL: ${SITE_URL:?set SITE_URL in .env}
+        NEXT_SERVER_ACTIONS_ENCRYPTION_KEY: ${NEXT_SERVER_ACTIONS_ENCRYPTION_KEY:?set NEXT_SERVER_ACTIONS_ENCRYPTION_KEY in .env}
+    environment:
+      API_URL: http://api:8000
+      SITE_URL: ${SITE_URL:?set SITE_URL in .env}
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/about').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      start_period: 30s
+      retries: 5
+    restart: unless-stopped
+    <<: *logging
+
+  caddy:
+    image: caddy:2
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"  # HTTP/3
+    environment:
+      SITE_DOMAIN: ${SITE_DOMAIN:?set SITE_DOMAIN in .env}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data  # certificates; keep across restarts or Let's Encrypt rate-limits you
+      - caddy_config:/config
+    depends_on:
+      - web
+      - api
+    restart: unless-stopped
+    <<: *logging
 
 volumes:
   pgdata:
+  caddy_data:
+  caddy_config:
