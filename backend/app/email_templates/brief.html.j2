@@ -1,0 +1,65 @@
+{% extends "_layout.html.j2" %}
+{% set title = subject %}
+{% set kicker = dateline %}
+{% set preheader = preheader %}
+{% macro section(number, heading) %}
+<tr><td style="padding:22px 28px 6px;">
+  <div style="border-bottom:3px solid #171614;padding-bottom:6px;">
+    <span style="font:11px 'Courier New',monospace;color:#b93b1a;">&sect;{{ "%02d"|format(number) }}</span>
+    <span style="font:bold 20px Georgia,'Times New Roman',serif;margin-left:8px;">{{ heading }}</span>
+  </div>
+</td></tr>
+{% endmacro %}
+{% macro badge(label, color, text_color="#ffffff") %}<span style="background:{{ color }};color:{{ text_color }};font:bold 10px 'Courier New',monospace;letter-spacing:1px;text-transform:uppercase;padding:2px 6px;">{{ label }}</span>{% endmacro %}
+{% block body %}
+<tr><td style="padding:20px 28px 0;font:italic 16px/1.5 Georgia,'Times New Roman',serif;color:#5f5a50;">{{ greeting }}</td></tr>
+
+{% set n = namespace(i=0) %}
+{% if releases %}{% set n.i = n.i + 1 %}{{ section(n.i, "Your stack shipped") }}
+{% for r in releases %}
+<tr><td style="padding:10px 28px;font:15px/1.5 Arial,Helvetica,sans-serif;">
+  {{ badge("Release", "#1d7467") }}
+  <a href="{{ r.url }}" style="color:#171614;font-weight:bold;text-decoration:none;">{{ r.tool }} {{ r.tag }}</a>
+  <span style="font:12px 'Courier New',monospace;color:#5f5a50;">&middot; {{ r.when }}</span>
+  {% if r.notes %}<div style="color:#5f5a50;font-size:14px;margin-top:4px;">{{ r.notes }}</div>{% endif %}
+</td></tr>
+{% endfor %}{% endif %}
+
+{% if rising %}{% set n.i = n.i + 1 %}{{ section(n.i, rising_heading) }}
+{% for t in rising %}
+<tr><td style="padding:10px 28px;font:15px/1.5 Arial,Helvetica,sans-serif;">
+  <a href="{{ t.url }}" style="color:#171614;font-weight:bold;text-decoration:none;">{{ t.name }}</a>
+  <span style="font:bold 12px 'Courier New',monospace;color:#1d7467;">&#9650; {{ t.velocity }}/day</span>
+  {% if t.description %}<div style="color:#5f5a50;font-size:14px;">{{ t.description }}</div>{% endif %}
+</td></tr>
+{% endfor %}{% endif %}
+
+{% if reads %}{% set n.i = n.i + 1 %}{{ section(n.i, "Must-reads") }}
+{% for a in reads %}
+<tr><td style="padding:10px 28px;font:15px/1.5 Arial,Helvetica,sans-serif;">
+  {{ badge(a.type_label, a.type_color, a.type_text) }}
+  {% if a.matched %}<span style="font:bold 10px 'Courier New',monospace;color:#b93b1a;">&nbsp;FOR YOU</span>{% endif %}
+  <div style="margin-top:4px;"><a href="{{ a.url }}" style="color:#171614;font:bold 17px/1.35 Georgia,'Times New Roman',serif;text-decoration:none;">{{ a.title }}</a></div>
+  {% if a.summary %}<div style="color:#5f5a50;font-size:14px;margin-top:2px;">{{ a.summary }}</div>{% endif %}
+  <div style="font:11px 'Courier New',monospace;color:#5f5a50;margin-top:4px;">{{ a.meta }}</div>
+</td></tr>
+{% endfor %}{% endif %}
+
+{% if demo %}{% set n.i = n.i + 1 %}{{ section(n.i, "Demo to try") }}
+<tr><td style="padding:10px 28px 4px;font:15px/1.5 Arial,Helvetica,sans-serif;">
+  {% if demo.image %}<a href="{{ demo.url }}"><img src="{{ demo.image }}" alt="" width="540" style="display:block;width:100%;max-width:540px;border:2px solid #171614;"></a>{% endif %}
+  <div style="margin-top:10px;"><a href="{{ demo.url }}" style="color:#171614;font-weight:bold;text-decoration:none;">{{ demo.name }}</a>
+  <span style="background:#e0a526;color:#171614;font:bold 10px 'Courier New',monospace;padding:2px 6px;">{{ demo.label }}</span></div>
+  {% if demo.description %}<div style="color:#5f5a50;font-size:14px;">{{ demo.description }}</div>{% endif %}
+</td></tr>
+{% endif %}
+
+<tr><td style="padding:24px 28px;">
+  <a href="{{ brief_url }}" style="display:inline-block;background:#b93b1a;color:#ffffff;border:2px solid #171614;padding:11px 20px;font:bold 12px 'Courier New',monospace;letter-spacing:1px;text-transform:uppercase;text-decoration:none;">{{ cta }}</a>
+</td></tr>
+{% endblock %}
+{% block footer %}
+You get this because you signed up at HangingAi. It arrives around {{ hour_label }} ({{ timezone }}).<br>
+<a href="{{ settings_url }}" style="color:#5f5a50;">Change time or topics</a> &middot;
+<a href="{{ unsubscribe_url }}" style="color:#5f5a50;">Unsubscribe</a>
+{% endblock %}

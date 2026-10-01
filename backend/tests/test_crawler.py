@@ -4,7 +4,7 @@ import pytest
 
 from app.scraping.crawler import BlockedPage, Crawler, DisallowedByRobots
 from app.scraping.rate_limit import DomainRateLimiter
-from app.scraping.robots import RobotsCache
+from app.scraping.robots import RobotsCache, RobotsRules
 
 FIXTURES = Path(__file__).parent / "fixtures"
 ROBOTS = """
@@ -69,3 +69,61 @@ async def test_crawler_detects_real_bot_wall() -> None:
         await Crawler(fetcher, robots, DomainRateLimiter(0.01)).get(
             "https://www.cnn.com/business/tech"
         )
+
+
+# --- RFC 9309 matching (urllib.robotparser gets all of these wrong) -------------
+
+
+def rules_from(text: str) -> RobotsRules:
+    rules = RobotsRules()
+    rules.parse(text.splitlines())
+    return rules
+
+
+GITHUB_LIKE = """
+User-agent: GPTBot
+Disallow: /
+
+User-agent: *
+Disallow: /*/*/tags
+Disallow: /*/raw/
+Disallow: /search$
+Allow: /search/about
+Disallow: /private
+Allow: /private/public-page
+"""
+
+
+@pytest.mark.parametrize(
+    "path, allowed",
+    [
+        ("/owner/repo", True),
+        ("/owner/repo/releases", True),
+        ("/owner/repo/tags", False),  # wildcard rule
+        ("/owner/repo/raw/main/demo.gif", False),
+        ("/search", False),  # `$` anchors the end...
+        ("/search?q=agents", True),  # ...so this doesn't match /search$
+        ("/private/secret", False),
+        ("/private/public-page", True),  # longer Allow beats shorter Disallow
+        ("/robots.txt", True),
+    ],
+)
+def test_rfc9309_wildcards_anchors_and_precedence(path: str, allowed: bool) -> None:
+    assert rules_from(GITHUB_LIKE).can_fetch("HangingAiBot", f"https://github.com{path}") is allowed
+
+
+def test_specific_agent_group_overrides_star_group() -> None:
+    rules = rules_from(
+        GITHUB_LIKE + "\nUser-agent: HangingAiBot\nUser-agent: OtherBot\nDisallow: /owner/\n"
+    )
+    assert not rules.can_fetch("HangingAiBot", "https://github.com/owner/repo")
+    assert rules.can_fetch(
+        "HangingAiBot", "https://github.com/owner-2/repo/tags"
+    )  # * group no longer applies
+    assert not rules.can_fetch("GPTBot", "https://github.com/anything")
+
+
+def test_equal_length_tie_goes_to_allow_and_crawl_delay_is_read() -> None:
+    rules = rules_from("User-agent: *\nDisallow: /page\nAllow: /page\nCrawl-delay: 5\n")
+    assert rules.can_fetch("HangingAiBot", "https://x.com/page")
+    assert rules.crawl_delay("HangingAiBot") == 5.0

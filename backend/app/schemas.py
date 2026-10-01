@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class _Out(BaseModel):
@@ -32,6 +32,8 @@ class ArticleOut(_Out):
     published_at: datetime
     engagement: int | None
     source: SourceBrief
+    votes: int = 0  # HangingAi upvotes
+    comments: int = 0
 
 
 class ArticleDetail(ArticleOut):
@@ -59,6 +61,8 @@ class ToolOut(_Out):
     preview_image_url: str | None
     demo_url: str | None
     demo_kind: str | None
+    votes: int = 0
+    comments: int = 0
 
 
 class ToolPage(BaseModel):
@@ -69,3 +73,114 @@ class ToolPage(BaseModel):
 class TopicCount(BaseModel):
     topic: str
     count: int
+
+
+class UserOut(_Out):
+    id: int
+    handle: str
+    email: str | None
+    is_guest: bool
+    brief_enabled: bool
+    brief_hour: int
+    timezone: str
+
+
+class LoginRequest(BaseModel):
+    email: str
+    next: str | None = None
+
+
+class VerifyRequest(BaseModel):
+    token: str
+
+
+class SessionOut(BaseModel):
+    session_token: str
+    expires_at: datetime
+    user: UserOut
+
+
+class SettingsIn(BaseModel):
+    handle: str | None = Field(default=None, max_length=40)
+    brief_enabled: bool | None = None
+    brief_hour: int | None = Field(default=None, ge=0, le=23)
+    timezone: str | None = Field(default=None, max_length=64)
+
+
+class FollowsOut(BaseModel):
+    tools: list[ToolOut]
+    topics: list[str]
+
+
+class ReleaseOut(_Out):
+    id: int
+    tag: str
+    name: str | None
+    url: str
+    published_at: datetime | None
+    notes: str | None
+    tool: ToolOut
+
+
+class BriefArticle(ArticleOut):
+    matched: bool = False  # matched one of the reader's topics
+
+
+class BriefOut(BaseModel):
+    personalized: bool
+    followed_topics: list[str]
+    releases: list[ReleaseOut]
+    rising: list[ToolOut]
+    reads: list[BriefArticle]
+    demo: ToolOut | None
+
+
+class UnsubscribeRequest(BaseModel):
+    u: int
+    t: str
+
+
+class CommentIn(BaseModel):
+    target_kind: str
+    target_id: int
+    body: str = Field(max_length=4000)  # trimmed and re-checked against the real limit
+    parent_id: int | None = None
+
+
+class CommentOut(BaseModel):
+    id: int
+    parent_id: int | None
+    author: str  # handle
+    body: str | None  # None when hidden or removed
+    status: str
+    created_at: datetime
+    votes: int
+    voted: bool
+    mine: bool
+    replies: list["CommentOut"] = []
+
+
+class CommentsOut(BaseModel):
+    count: int
+    comments: list[CommentOut]
+
+
+class ReportIn(BaseModel):
+    reason: str | None = Field(default=None, max_length=200)
+
+
+class VoteOut(BaseModel):
+    voted: bool
+    votes: int
+
+
+class ModerationItem(BaseModel):
+    id: int
+    target_kind: str
+    target_id: int
+    author: str
+    author_id: int
+    body: str
+    status: str
+    report_count: int
+    created_at: datetime

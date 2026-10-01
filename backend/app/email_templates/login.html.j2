@@ -1,0 +1,12 @@
+{% extends "_layout.html.j2" %}
+{% set title = "Sign in to HangingAi" %}
+{% set kicker = "Sign-in link" %}
+{% set preheader = "Your one-time sign-in link, valid for " ~ minutes ~ " minutes." %}
+{% block body %}
+<tr><td style="padding:26px 28px;font:16px/1.6 Arial,Helvetica,sans-serif;">
+  <p style="margin:0 0 20px;">Press the button to sign in. The link works once and expires in {{ minutes }} minutes.</p>
+  <a href="{{ link }}" style="display:inline-block;background:#b93b1a;color:#ffffff;border:2px solid #171614;padding:12px 22px;font:bold 13px 'Courier New',monospace;letter-spacing:1px;text-transform:uppercase;text-decoration:none;">Sign in to HangingAi</a>
+  <p style="margin:22px 0 0;font-size:13px;color:#5f5a50;">Or paste this link into your browser:<br><span style="word-break:break-all;">{{ link }}</span></p>
+</td></tr>
+{% endblock %}
+{% block footer %}Didn't ask for this? Ignore it; nobody can sign in without this link.{% endblock %}

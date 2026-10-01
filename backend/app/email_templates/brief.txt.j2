@@ -1,0 +1,39 @@
+HANGINGAI · {{ dateline }}
+
+{{ greeting }}
+{% if releases %}
+
+YOUR STACK SHIPPED
+{% for r in releases %}
+- {{ r.tool }} {{ r.tag }} ({{ r.when }}): {{ r.url }}
+{% if r.notes %}  {{ r.notes }}
+{% endif %}
+{% endfor %}
+{% endif %}
+{% if rising %}
+
+{{ rising_heading|upper }}
+{% for t in rising %}
+- {{ t.name }} (+{{ t.velocity }} stars/day): {{ t.url }}
+{% endfor %}
+{% endif %}
+{% if reads %}
+
+MUST-READS
+{% for a in reads %}
+- {{ a.title }}{% if a.matched %} [for you]{% endif %}
+
+  {{ a.url }}
+{% endfor %}
+{% endif %}
+{% if demo %}
+
+DEMO TO TRY
+- {{ demo.name }} ({{ demo.label }}): {{ demo.url }}
+{% endif %}
+
+{{ cta }}: {{ brief_url }}
+
+--
+Change time or topics: {{ settings_url }}
+Unsubscribe: {{ unsubscribe_url }}

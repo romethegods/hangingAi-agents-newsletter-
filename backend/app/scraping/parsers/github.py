@@ -5,7 +5,7 @@ from urllib.parse import urljoin
 from selectolax.parser import HTMLParser
 
 from app.scraping.parsers._html import int_of, parse_iso, text_of
-from app.scraping.types import Demo, DemoKind, ParseResult, RawTool
+from app.scraping.types import Demo, DemoKind, ParseResult, RawRelease, RawTool
 
 
 def _repo_path(href: str | None) -> str | None:
@@ -173,3 +173,33 @@ def _ancestors(node, depth: int = 3):
     while parent is not None and depth > 0:
         yield parent
         parent, depth = parent.parent, depth - 1
+
+
+RELEASE_NOTES_LIMIT = 500
+
+
+def parse_releases(html: str, base_url: str) -> list[RawRelease]:
+    """github.com/<owner>/<repo>/releases: one <section> per release, newest first."""
+    releases = []
+    for section in HTMLParser(html).css("section[data-release-anchor]"):
+        link = section.css_first('a[href*="/releases/tag/"]')
+        if link is None:
+            continue
+        tag = text_of(link)
+        if not tag:
+            continue
+        stamp = section.css_first("relative-time")
+        notes = section.css_first(".markdown-body")
+        heading = section.css_first(".markdown-body h1, .markdown-body h2")
+        labels = {text_of(label) for label in section.css(".Label")}
+        releases.append(
+            RawRelease(
+                tag=tag,
+                url=urljoin(base_url, link.attributes.get("href") or ""),
+                name=text_of(heading),
+                published_at=parse_iso(stamp.attributes.get("datetime") if stamp else None),
+                notes=text_of(notes, limit=RELEASE_NOTES_LIMIT),
+                is_prerelease="Pre-release" in labels,
+            )
+        )
+    return releases

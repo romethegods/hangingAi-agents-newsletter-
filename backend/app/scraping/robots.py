@@ -1,15 +1,96 @@
-"""robots.txt compliance, cached per host (RFC 9309 semantics)."""
+"""robots.txt compliance, cached per host (RFC 9309 semantics).
+
+We don't use urllib.robotparser: it ignores the `*` and `$` wildcards RFC 9309
+requires, so a rule like GitHub's `Disallow: /*/*/tags` silently allowed
+everything.
+"""
 
 import asyncio
+import contextlib
+import re
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from urllib.parse import urlsplit
-from urllib.robotparser import RobotFileParser
 
 import httpx
 
 ROBOTS_AGENT = "HangingAiBot"
+
+
+@dataclass(slots=True)
+class _Group:
+    agents: list[str]
+    rules: list[tuple[bool, str, re.Pattern]]  # (allow, raw pattern, compiled)
+    crawl_delay: float | None = None
+
+
+def _compile(pattern: str) -> re.Pattern:
+    """`*` matches any run of characters; a trailing `$` anchors the end."""
+    anchored = pattern.endswith("$")
+    body = pattern[:-1] if anchored else pattern
+    regex = ".*".join(re.escape(part) for part in body.split("*"))
+    return re.compile(regex + ("$" if anchored else ""))
+
+
+class RobotsRules:
+    """Parsed robots.txt. Same interface as urllib's RobotsRules, correct matching."""
+
+    def __init__(self) -> None:
+        self.allow_all = False
+        self.disallow_all = False
+        self._groups: list[_Group] = []
+
+    def parse(self, lines: list[str]) -> None:
+        current: _Group | None = None
+        for raw in lines:
+            line = raw.split("#", 1)[0].strip()
+            if ":" not in line:
+                continue
+            field, value = (part.strip() for part in line.split(":", 1))
+            field = field.lower()
+            if field == "user-agent":
+                # Consecutive user-agent lines share one group of rules.
+                if current is None or current.rules or current.crawl_delay is not None:
+                    current = _Group(agents=[], rules=[])
+                    self._groups.append(current)
+                current.agents.append(value.lower())
+            elif current is None:
+                continue  # rules before any user-agent line are ignored
+            elif field in ("allow", "disallow") and value:
+                current.rules.append((field == "allow", value, _compile(value)))
+            elif field == "crawl-delay":
+                with contextlib.suppress(ValueError):
+                    current.crawl_delay = float(value)
+
+    def _groups_for(self, agent: str) -> list[_Group]:
+        token = agent.lower()
+        mine = [g for g in self._groups if token in g.agents]
+        return mine or [g for g in self._groups if "*" in g.agents]
+
+    def can_fetch(self, agent: str, url: str) -> bool:
+        if self.disallow_all:
+            return False
+        if self.allow_all:
+            return True
+        parts = urlsplit(url)
+        path = (parts.path or "/") + (f"?{parts.query}" if parts.query else "")
+        if path == "/robots.txt":
+            return True
+        # The longest matching rule wins; on a tie, allow wins (the least restrictive).
+        best: tuple[int, bool] | None = None
+        for group in self._groups_for(agent):
+            for allow, raw, pattern in group.rules:
+                if pattern.match(path):
+                    candidate = (len(raw), allow)
+                    if best is None or candidate > best:
+                        best = candidate
+        return best is None or best[1]
+
+    def crawl_delay(self, agent: str) -> float | None:
+        delays = [g.crawl_delay for g in self._groups_for(agent) if g.crawl_delay is not None]
+        return max(delays) if delays else None
+
 
 # Returns (status_code, body); raises on network failure.
 RobotsLoader = Callable[[str], Awaitable[tuple[int, str]]]
@@ -17,7 +98,7 @@ RobotsLoader = Callable[[str], Awaitable[tuple[int, str]]]
 
 @dataclass(slots=True)
 class _Entry:
-    parser: RobotFileParser
+    parser: RobotsRules
     expires_at: float
 
 
@@ -43,7 +124,7 @@ class RobotsCache:
         self._cache: dict[str, _Entry] = {}
         self._locks: dict[str, asyncio.Lock] = {}
 
-    async def _parser_for(self, url: str) -> RobotFileParser:
+    async def _parser_for(self, url: str) -> RobotsRules:
         parts = urlsplit(url)
         origin = f"{parts.scheme}://{parts.netloc}"
         entry = self._cache.get(origin)
@@ -56,8 +137,8 @@ class RobotsCache:
                 return entry.parser
             return await self._load(origin)
 
-    async def _load(self, origin: str) -> RobotFileParser:
-        parser = RobotFileParser()
+    async def _load(self, origin: str) -> RobotsRules:
+        parser = RobotsRules()
         ttl = self._ttl
         try:
             status, body = await self._loader(f"{origin}/robots.txt")

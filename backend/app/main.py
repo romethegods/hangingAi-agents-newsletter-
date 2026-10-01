@@ -11,11 +11,14 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import func, or_, select, text, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import community
 from app.api_limits import KeyedRateLimiter, Tier, is_exempt, parse_networks
 from app.config import get_settings
 from app.db import engine, get_session
 from app.models import Article, Source, Tool
 from app.ranking import diversified_top_k, hot_score
+from app.routes_account import router as account_router
+from app.routes_community import router as community_router
 from app.schemas import (
     ArticleDetail,
     ArticleOut,
@@ -46,6 +49,27 @@ _settings = get_settings()
 app.state.rate_limiter = KeyedRateLimiter()
 app.state.rate_limit_exempt = parse_networks(_settings.rate_limit_exempt_networks)
 DEFAULT_TIER = Tier("api", _settings.rate_limit_per_minute, _settings.rate_limit_burst)
+AUTH_TIER = Tier("auth", _settings.rate_limit_auth_per_minute, _settings.rate_limit_auth_burst)
+# Guest creation mints identities, so it's hourly: rate per minute = per_hour / 60.
+GUEST_TIER = Tier("guest", _settings.rate_limit_guest_per_hour / 60, 5)
+WRITE_TIER = Tier("write", _settings.rate_limit_write_per_minute, _settings.rate_limit_write_burst)
+VOTE_TIER = Tier("vote", _settings.rate_limit_vote_per_minute, _settings.rate_limit_vote_burst)
+
+
+def tier_for(method: str, path: str) -> Tier:
+    if path.startswith("/api/auth/"):
+        return AUTH_TIER
+    if method == "POST" and path == "/api/guest":
+        return GUEST_TIER
+    if method in ("POST", "DELETE") and path.startswith("/api/comments"):
+        return WRITE_TIER
+    if method == "POST" and path.startswith("/api/votes/"):
+        return VOTE_TIER
+    if path == "/api/search":
+        return SEARCH_TIER
+    return DEFAULT_TIER
+
+
 SEARCH_TIER = Tier(
     "search", _settings.rate_limit_search_per_minute, _settings.rate_limit_search_burst
 )
@@ -55,14 +79,17 @@ SEARCH_TIER = Tier(
 async def rate_limit(request: Request, call_next):
     path = request.url.path
     client = request.client.host if request.client else None
-    if (
-        not _settings.rate_limit_enabled
-        or not path.startswith("/api/")
-        or is_exempt(client, request.app.state.rate_limit_exempt)
-    ):
+    if not _settings.rate_limit_enabled or not path.startswith("/api/"):
         return await call_next(request)
+    if is_exempt(client, request.app.state.rate_limit_exempt):
+        # Our web server is exempt for its own reads, but on account actions (sign-in,
+        # follows) it forwards the visitor's IP, so those are limited per visitor. The
+        # header is only honored from the internal network, so outsiders can't spoof it.
+        client = request.headers.get("x-client-ip")
+        if not client:
+            return await call_next(request)
 
-    tier = SEARCH_TIER if path == "/api/search" else DEFAULT_TIER
+    tier = tier_for(request.method, path)
     decision = request.app.state.rate_limiter.check(client or "unknown", tier)
     if not decision.allowed:
         return JSONResponse(
@@ -106,6 +133,35 @@ def _decode_cursor(cursor: str) -> tuple[datetime, int]:
         raise HTTPException(400, "invalid cursor") from exc
 
 
+app.include_router(account_router)
+app.include_router(community_router)
+
+
+async def _articles_out(session: AsyncSession, articles: list[Article]) -> list[ArticleOut]:
+    """Attach HangingAi votes and comment counts (two grouped queries per page)."""
+    ids = [a.id for a in articles]
+    votes = await community.vote_counts(session, "article", ids)
+    comments = await community.comment_counts(session, "article", ids)
+    return [
+        ArticleOut.model_validate(a).model_copy(
+            update={"votes": votes.get(a.id, 0), "comments": comments.get(a.id, 0)}
+        )
+        for a in articles
+    ]
+
+
+async def _tools_out(session: AsyncSession, tools: list[Tool]) -> list[ToolOut]:
+    ids = [t.id for t in tools]
+    votes = await community.vote_counts(session, "tool", ids)
+    comments = await community.comment_counts(session, "tool", ids)
+    return [
+        ToolOut.model_validate(t).model_copy(
+            update={"votes": votes.get(t.id, 0), "comments": comments.get(t.id, 0)}
+        )
+        for t in tools
+    ]
+
+
 @app.get("/health")
 async def health(session: Session) -> dict:
     await session.execute(text("SELECT 1"))
@@ -140,16 +196,21 @@ async def feed(
             .scalars()
             .all()
         )
+        votes = await community.vote_counts(session, "article", [a.id for a in candidates])
         ranked = diversified_top_k(
             candidates,
             limit,
             key=lambda a: hot_score(
-                a.published_at, now, source_weight=a.source.weight, engagement=a.engagement
+                a.published_at,
+                now,
+                source_weight=a.source.weight,
+                engagement=a.engagement,
+                votes=votes.get(a.id, 0),
             ),
             group=lambda a: a.content_type,
             max_per_group=max(1, math.ceil(limit / 2)),
         )
-        return FeedPage(items=ranked)
+        return FeedPage(items=await _articles_out(session, ranked))
 
     # Keyset pagination: stable under inserts and O(limit) at any depth, unlike OFFSET.
     if cursor:
@@ -165,7 +226,8 @@ async def feed(
     )
     page, more = rows[:limit], len(rows) > limit
     return FeedPage(
-        items=page, next_cursor=_encode_cursor(page[-1].published_at, page[-1].id) if more else None
+        items=await _articles_out(session, page),
+        next_cursor=_encode_cursor(page[-1].published_at, page[-1].id) if more else None,
     )
 
 
@@ -181,8 +243,11 @@ async def article(article_id: int, session: Session) -> ArticleDetail:
         .where(or_(Article.id == root, Article.duplicate_of_id == root), Article.id != found.id)
         .order_by(Article.published_at)
     )
-    detail = ArticleDetail.model_validate(found)
-    detail.coverage = [ArticleOut.model_validate(a) for a in coverage.scalars()]
+    [counted] = await _articles_out(session, [found])
+    detail = ArticleDetail.model_validate(found).model_copy(
+        update={"votes": counted.votes, "comments": counted.comments}
+    )
+    detail.coverage = await _articles_out(session, list(coverage.scalars()))
     return detail
 
 
@@ -191,7 +256,7 @@ async def search(
     session: Session,
     q: Annotated[str, Query(min_length=2, max_length=200)],
     limit: Annotated[int, Query(ge=1, le=50)] = 20,
-) -> list[Article]:
+) -> list[ArticleOut]:
     ts_query = func.websearch_to_tsquery("english", q)
     rank = func.ts_rank_cd(Article.search_tsv, ts_query)
     rows = await session.execute(
@@ -200,7 +265,7 @@ async def search(
         .order_by(rank.desc(), Article.published_at.desc())
         .limit(limit)
     )
-    return list(rows.scalars())
+    return await _articles_out(session, list(rows.scalars()))
 
 
 @app.get("/api/tools", response_model=ToolPage)
@@ -230,15 +295,16 @@ async def tools(
         ToolSort.NEW: (Tool.first_seen_at.desc(), Tool.stars.desc()),
     }[sort]
     rows = await session.execute(query.order_by(*order, Tool.id).limit(limit).offset(offset))
-    return ToolPage(items=[ToolOut.model_validate(t) for t in rows.scalars()], total=total)
+    return ToolPage(items=await _tools_out(session, list(rows.scalars())), total=total)
 
 
 @app.get("/api/tools/{tool_id}", response_model=ToolOut)
-async def tool(tool_id: int, session: Session) -> Tool:
+async def tool(tool_id: int, session: Session) -> ToolOut:
     found = await session.get(Tool, tool_id)
     if found is None:
         raise HTTPException(404, "tool not found")
-    return found
+    [out] = await _tools_out(session, [found])
+    return out
 
 
 @app.get("/api/topics", response_model=list[TopicCount])

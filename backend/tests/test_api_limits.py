@@ -112,3 +112,51 @@ async def test_internal_callers_are_not_limited(strict_limits) -> None:
             response = await c.get("/api/search", params={"q": "agents"})
             assert response.status_code == 200
             assert "RateLimit-Limit" not in response.headers
+
+
+async def test_forwarded_visitor_ip_is_limited_on_sign_in(strict_limits, monkeypatch) -> None:
+    """Our web server is exempt for its own reads, but it forwards the visitor's IP on
+    account actions, so nobody can use our sign-in form to mail-bomb strangers."""
+    from app import routes_account
+    from app.main import AUTH_TIER
+
+    class Quiet:
+        async def send(self, message) -> None:
+            pass
+
+    monkeypatch.setattr(routes_account, "get_sender", lambda: Quiet())
+    async with client_from("127.0.0.1") as web_server:
+        codes = [
+            (
+                await web_server.post(
+                    "/api/auth/request-link",
+                    json={"email": f"victim{i}@example.com"},
+                    headers={"X-Client-IP": "203.0.113.50"},
+                )
+            ).status_code
+            for i in range(AUTH_TIER.burst + 1)
+        ]
+        assert codes[:-1] == [202] * AUTH_TIER.burst and codes[-1] == 429
+        # A different visitor through the same web server is unaffected.
+        other = await web_server.post(
+            "/api/auth/request-link",
+            json={"email": "me@example.com"},
+            headers={"X-Client-IP": "198.51.100.1"},
+        )
+        assert other.status_code == 202
+
+    async with client_from("203.0.113.99") as outsider:  # outsiders can't pick their own key
+        spoofed = await outsider.get("/api/tools", headers={"X-Client-IP": "10.0.0.1"})
+        assert spoofed.status_code == 200 and spoofed.headers["RateLimit-Limit"]
+
+
+def test_production_refuses_to_start_without_a_secret() -> None:
+    from pydantic import ValidationError
+
+    from app.config import Settings
+
+    for secret in ("", "dev-only-insecure-secret-change-me"):
+        with pytest.raises(ValidationError, match="SECRET_KEY"):
+            Settings(site_url="https://hangingai.com", secret_key=secret)
+    Settings(site_url="https://hangingai.com", secret_key="x" * 48)  # fine
+    Settings(site_url="http://localhost:3000")  # dev default is allowed locally

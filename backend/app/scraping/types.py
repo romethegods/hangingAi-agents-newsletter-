@@ -74,6 +74,16 @@ class RawTool:
 
 
 @dataclass(slots=True)
+class RawRelease:
+    tag: str
+    url: str
+    name: str | None = None
+    published_at: datetime | None = None
+    notes: str | None = None  # plain-text excerpt of the release notes
+    is_prerelease: bool = False
+
+
+@dataclass(slots=True)
 class ParseResult:
     items: list[RawItem] = field(default_factory=list)
     tools: list[RawTool] = field(default_factory=list)

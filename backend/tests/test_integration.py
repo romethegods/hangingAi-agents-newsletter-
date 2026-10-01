@@ -293,3 +293,31 @@ async def test_hot_models_tab_looks_back_further_than_news(
     assert [a["title"] for a in models["items"]] == ["acme/older-model"]
     mixed = (await client.get("/api/feed", params={"sort": "hot"})).json()
     assert mixed["items"] == []  # the front page stays about the last 72 hours
+
+
+async def test_reader_upvotes_lift_a_story_in_the_hot_feed(
+    session_factory, source_id, client
+) -> None:
+    from app.models import User, Vote
+
+    await ingest(
+        session_factory,
+        source_id,
+        [
+            news("https://site.com/a", "Slightly fresher story nobody voted on", hours_ago=1),
+            news("https://site.com/b", "Story readers love and upvoted heavily", hours_ago=3),
+        ],
+    )
+    async with session_factory() as session, session.begin():
+        b = (
+            await session.execute(
+                select(Article).where(Article.url_canonical == "https://site.com/b")
+            )
+        ).scalar_one()
+        session.add_all([User(handle=f"hanging-{2000 + i}") for i in range(10)])
+    async with session_factory() as session, session.begin():
+        users = (await session.execute(select(User.id))).scalars().all()
+        session.add_all([Vote(user_id=u, target_kind="article", target_id=b.id) for u in users])
+    hot = (await client.get("/api/feed", params={"sort": "hot"})).json()["items"]
+    assert [a["url"] for a in hot][:2] == ["https://site.com/b", "https://site.com/a"]
+    assert hot[0]["votes"] == 10

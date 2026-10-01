@@ -3,6 +3,9 @@
 python -m app.worker                 # run forever on each source's schedule
 python -m app.worker --once          # crawl every enabled source once, then exit
 python -m app.worker --once --source hf-papers
+python -m app.worker --media         # only scan GitHub READMEs for demos
+python -m app.worker --releases      # only check followed tools for new releases
+python -m app.worker --briefs        # send daily briefs that are due (no browser)
 """
 
 import argparse
@@ -15,18 +18,22 @@ import nodriver
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 
+from app.brief_delivery import send_due_briefs
 from app.config import get_settings
 from app.db import SessionLocal
+from app.email import get_sender
 from app.models import Source
 from app.scraping.browser import BrowserPool
 from app.scraping.crawler import BlockedPage, Crawler, CrawlError, DisallowedByRobots
-from app.scraping.parsers.github import parse_repo_media
+from app.scraping.parsers.github import parse_releases, parse_repo_media
 from app.scraping.pipeline import (
     IngestStats,
     save_items,
+    save_releases,
     save_repo_media,
     save_tools,
     tools_needing_media,
+    tools_needing_releases,
 )
 from app.scraping.rate_limit import DomainRateLimiter
 from app.scraping.registry import SOURCES, SOURCES_BY_SLUG, SourceDef
@@ -99,6 +106,41 @@ async def scan_readme_media(crawler: Crawler, batch: int = MEDIA_BATCH) -> int:
     return found
 
 
+RELEASES_JOB = "github-releases"
+RELEASES_BATCH = 20
+BRIEFS_JOB = "daily-briefs"
+
+
+async def scan_releases(crawler: Crawler, batch: int = RELEASES_BATCH) -> int:
+    """Check the releases page of followed GitHub tools that are due."""
+    async with SessionLocal() as session:
+        queue = await tools_needing_releases(session, datetime.now(UTC), batch)
+    new = 0
+    for tool in queue:
+        url = f"{tool.url}/releases"
+        try:
+            html = await crawler.get(url)
+        except (DisallowedByRobots, BlockedPage) as exc:
+            log.warning("release scan stopped at %s: %s", tool.full_name, exc)
+            break
+        except Exception as exc:
+            log.warning("release scan failed for %s: %s", tool.full_name, exc)
+            continue
+        async with SessionLocal() as session, session.begin():
+            new += await save_releases(
+                session, tool.id, parse_releases(html, url), datetime.now(UTC)
+            )
+    log.info("%s ok: scanned=%d new_releases=%d", RELEASES_JOB, len(queue), new)
+    return new
+
+
+async def send_briefs() -> None:
+    stats = await send_due_briefs(SessionLocal, get_sender(), datetime.now(UTC))
+    log.info(
+        "%s ok: sent=%d failed=%d skipped=%d", BRIEFS_JOB, stats.sent, stats.failed, stats.skipped
+    )
+
+
 async def crawl_source(crawler: Crawler, sdef: SourceDef, source_id: int) -> IngestStats:
     now = datetime.now(UTC)
     try:
@@ -167,8 +209,9 @@ async def run_once(slugs: list[str] | None = None) -> int:
             if isinstance(result, BaseException):
                 failures += 1
                 log.error("%s failed: %s", sdef.slug, result)
-        if not slugs:  # a full run also refreshes tool demos
+        if not slugs:  # a full run also refreshes tool demos and followed tools' releases
             await scan_readme_media(crawler)
+            await scan_releases(crawler)
     finally:
         browser.stop()
     return 1 if failures else 0
@@ -179,6 +222,16 @@ async def run_media_once() -> int:
     await browser.start()
     try:
         await scan_readme_media(_build_crawler(browser))
+    finally:
+        browser.stop()
+    return 0
+
+
+async def run_releases_once() -> int:
+    browser = _browser_from_settings()
+    await browser.start()
+    try:
+        await scan_releases(_build_crawler(browser))
     finally:
         browser.stop()
     return 0
@@ -198,6 +251,8 @@ async def run_forever() -> None:
         scheduler.add(sdef.slug, interval.total_seconds(), mono_now + wait)
     # After the first tool crawls have landed, then hourly.
     scheduler.add(MEDIA_JOB, 3600, mono_now + 120)
+    scheduler.add(RELEASES_JOB, 1800, mono_now + 180)
+    scheduler.add(BRIEFS_JOB, 600, mono_now + 30)  # checks each user's local brief hour
 
     browser = _browser_from_settings()
     await browser.start()
@@ -207,6 +262,10 @@ async def run_forever() -> None:
         try:
             if slug == MEDIA_JOB:
                 await scan_readme_media(crawler)
+            elif slug == RELEASES_JOB:
+                await scan_releases(crawler)
+            elif slug == BRIEFS_JOB:
+                await send_briefs()
             else:
                 await crawl_source(crawler, SOURCES_BY_SLUG[slug], rows[slug].id)
             succeeded = True
@@ -237,6 +296,12 @@ def main() -> None:
     parser.add_argument(
         "--media", action="store_true", help="only scan GitHub READMEs for demos, then exit"
     )
+    parser.add_argument(
+        "--releases", action="store_true", help="only check followed tools for releases, then exit"
+    )
+    parser.add_argument(
+        "--briefs", action="store_true", help="send any daily briefs that are due, then exit"
+    )
     args = parser.parse_args()
     logging.basicConfig(
         level=get_settings().log_level, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
@@ -247,6 +312,11 @@ def main() -> None:
     loop = nodriver.loop()
     if args.media:
         raise SystemExit(loop.run_until_complete(run_media_once()))
+    if args.releases:
+        raise SystemExit(loop.run_until_complete(run_releases_once()))
+    if args.briefs:
+        loop.run_until_complete(send_briefs())  # no browser needed
+        raise SystemExit(0)
     if args.once:
         raise SystemExit(loop.run_until_complete(run_once(args.source)))
     loop.run_until_complete(run_forever())

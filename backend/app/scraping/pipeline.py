@@ -3,16 +3,16 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from sqlalchemy import func, literal_column, or_, select, update
+from sqlalchemy import Integer, func, literal_column, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Article, Tool, ToolStarSnapshot
+from app.models import Article, Follow, Tool, ToolRelease, ToolStarSnapshot
 from app.ranking import star_velocity
 from app.scraping.canonical import canonicalize_url, url_hash
 from app.scraping.minhash import MinHashLSH, minhash
 from app.scraping.parsers.github import RepoMedia
-from app.scraping.types import Platform, RawItem, RawTool
+from app.scraping.types import Platform, RawItem, RawRelease, RawTool
 
 NEAR_DUP_LOOKBACK = timedelta(days=3)
 VELOCITY_WINDOW = timedelta(days=7)
@@ -166,6 +166,58 @@ async def save_tools(
                 update(Tool).where(Tool.id == tool_id).values(star_velocity=velocity)
             )
         stats.tools_upserted += 1
+
+
+RELEASES_RESCAN_AFTER = timedelta(hours=6)
+
+
+async def tools_needing_releases(session: AsyncSession, now: datetime, limit: int) -> list[Tool]:
+    """Followed GitHub tools whose releases page is due for a check, stalest first.
+
+    Only followed tools: nobody reads release news for a tool nobody follows, and
+    this keeps GitHub traffic proportional to real interest.
+    """
+    followed = select(func.cast(Follow.target, Integer)).where(Follow.kind == "tool").distinct()
+    rows = await session.execute(
+        select(Tool)
+        .where(
+            Tool.platform == Platform.GITHUB.value,
+            Tool.id.in_(followed),
+            or_(
+                Tool.releases_checked_at.is_(None),
+                Tool.releases_checked_at < now - RELEASES_RESCAN_AFTER,
+            ),
+        )
+        .order_by(Tool.releases_checked_at.asc().nulls_first())
+        .limit(limit)
+    )
+    return list(rows.scalars())
+
+
+async def save_releases(
+    session: AsyncSession, tool_id: int, releases: list[RawRelease], now: datetime
+) -> int:
+    """Upsert a tool's releases; returns how many were new."""
+    new = 0
+    for release in releases:
+        inserted = await session.scalar(
+            insert(ToolRelease)
+            .values(
+                tool_id=tool_id,
+                tag=release.tag,
+                name=release.name,
+                url=release.url,
+                published_at=release.published_at,
+                notes=release.notes,
+                is_prerelease=release.is_prerelease,
+                first_seen_at=now,
+            )
+            .on_conflict_do_nothing(constraint="uq_tool_releases_tool_tag")
+            .returning(ToolRelease.id)
+        )
+        new += inserted is not None
+    await session.execute(update(Tool).where(Tool.id == tool_id).values(releases_checked_at=now))
+    return new
 
 
 MEDIA_RESCAN_AFTER = timedelta(days=7)

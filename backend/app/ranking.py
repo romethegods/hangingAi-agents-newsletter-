@@ -13,13 +13,16 @@ def hot_score(
     *,
     source_weight: float = 1.0,
     engagement: int | None = None,
+    votes: int = 0,
     half_life_hours: float = 24.0,
 ) -> float:
     """Exponential time decay (score halves every half_life_hours), boosted by
-    log-engagement so one viral item can't drown everything else."""
+    log-engagement at the source and log-upvotes from HangingAi readers. Logs keep
+    one viral item (or one brigade) from drowning everything else."""
     age_hours = max(0.0, (now - published_at).total_seconds() / 3600)
     decay = 0.5 ** (age_hours / half_life_hours)
-    return source_weight * (1 + math.log1p(max(0, engagement or 0))) * decay
+    community = 1 + math.log1p(max(0, votes))
+    return source_weight * (1 + math.log1p(max(0, engagement or 0))) * community * decay
 
 
 def top_k[T](items: Iterable[T], k: int, key: Callable[[T], float]) -> list[T]:
