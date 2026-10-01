@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import community
 from app.api_limits import KeyedRateLimiter, Tier, is_exempt, parse_networks
+from app.arena.routes import router as arena_router
 from app.config import get_settings
 from app.db import engine, get_session
 from app.models import Article, Source, Tool
@@ -54,6 +55,7 @@ AUTH_TIER = Tier("auth", _settings.rate_limit_auth_per_minute, _settings.rate_li
 GUEST_TIER = Tier("guest", _settings.rate_limit_guest_per_hour / 60, 5)
 WRITE_TIER = Tier("write", _settings.rate_limit_write_per_minute, _settings.rate_limit_write_burst)
 VOTE_TIER = Tier("vote", _settings.rate_limit_vote_per_minute, _settings.rate_limit_vote_burst)
+ARENA_TIER = Tier("arena", _settings.rate_limit_arena_per_minute, _settings.rate_limit_arena_burst)
 
 
 def tier_for(method: str, path: str) -> Tier:
@@ -65,6 +67,8 @@ def tier_for(method: str, path: str) -> Tier:
         return WRITE_TIER
     if method == "POST" and path.startswith("/api/votes/"):
         return VOTE_TIER
+    if method == "POST" and path == "/api/arena/battles":
+        return ARENA_TIER
     if path == "/api/search":
         return SEARCH_TIER
     return DEFAULT_TIER
@@ -135,6 +139,7 @@ def _decode_cursor(cursor: str) -> tuple[datetime, int]:
 
 app.include_router(account_router)
 app.include_router(community_router)
+app.include_router(arena_router)
 
 
 async def _articles_out(session: AsyncSession, articles: list[Article]) -> list[ArticleOut]:

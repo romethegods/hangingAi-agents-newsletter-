@@ -13,6 +13,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
@@ -339,3 +340,58 @@ class Vote(Base):
     target_kind: Mapped[str] = mapped_column(String(16), primary_key=True)
     target_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ArenaModelStat(Base):
+    """A model's Arena record. Model details live in app/arena/registry.py."""
+
+    __tablename__ = "arena_model_stats"
+
+    slug: Mapped[str] = mapped_column(String(64), primary_key=True)
+    rating: Mapped[float] = mapped_column(Float, server_default=text("1000"))
+    battles: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    wins: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    losses: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    ties: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ArenaBattle(Base):
+    """One prompt, two anonymous answers, one vote."""
+
+    __tablename__ = "arena_battles"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'streaming', 'ready', 'voted', 'failed')",
+            name="ck_arena_battles_status",
+        ),
+        CheckConstraint("vote IN ('a', 'b', 'tie', 'bad')", name="ck_arena_battles_vote"),
+        CheckConstraint("model_a <> model_b", name="ck_arena_battles_distinct_models"),
+        Index("ix_arena_battles_user_created", "user_id", "created_at"),
+        Index("ix_arena_battles_created", "created_at"),  # today's spend
+        Index(
+            "ix_arena_battles_public",
+            text("voted_at DESC"),
+            postgresql_where=text("public AND status = 'voted'"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    prompt: Mapped[str] = mapped_column(Text)
+    model_a: Mapped[str] = mapped_column(String(64))
+    model_b: Mapped[str] = mapped_column(String(64))
+    response_a: Mapped[str | None] = mapped_column(Text)
+    response_b: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(16), server_default=text("'pending'"))
+    error: Mapped[str | None] = mapped_column(Text)
+    vote: Mapped[str | None] = mapped_column(String(8))
+    # A response named its own model or maker: the vote is kept but not rated.
+    identity_leak: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
+    public: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
+    cost_usd: Mapped[float] = mapped_column(Numeric(10, 6), server_default=text("0"))
+    rating_change_a: Mapped[float | None] = mapped_column(Float)
+    rating_change_b: Mapped[float | None] = mapped_column(Float)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    voted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

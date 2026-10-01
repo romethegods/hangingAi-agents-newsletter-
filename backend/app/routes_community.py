@@ -3,13 +3,14 @@
 from datetime import UTC, datetime
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import auth, community
 from app.db import get_session
 from app.models import Comment, User
+from app.presence import presence
 from app.schemas import CommentIn, CommentOut, CommentsOut, ModerationItem, ReportIn, VoteOut
 
 router = APIRouter(prefix="/api")
@@ -24,8 +25,14 @@ def _refuse(exc: community.CommunityError) -> HTTPException:
 
 @router.get("/comments/{kind}/{target_id}", response_model=CommentsOut)
 async def list_comments(
-    kind: TargetKind, target_id: int, session: Session, viewer: auth.MaybeUser
+    kind: TargetKind,
+    target_id: int,
+    session: Session,
+    viewer: auth.MaybeUser,
+    x_viewer_id: Annotated[str | None, Header()] = None,
 ) -> CommentsOut:
+    """A post's chat room. An open chat window polls this with a random per-tab
+    X-Viewer-Id, which also counts it toward "N here now"."""
     rows = list(
         (
             await session.execute(
@@ -65,7 +72,8 @@ async def list_comments(
     top.sort(key=lambda c: (c.status != "visible", -c.votes, c.created_at))
     top = [c for c in top if c.status != "removed" or c.replies]
     visible = sum(1 for c in rows if c.status == "visible")
-    return CommentsOut(count=visible, comments=top)
+    here = presence.touch(f"{kind}:{target_id}", x_viewer_id)
+    return CommentsOut(count=visible, comments=top, here=here)
 
 
 @router.post("/comments", response_model=CommentOut, status_code=201)

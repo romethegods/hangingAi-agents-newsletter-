@@ -49,6 +49,8 @@ class Settings(BaseSettings):
     rate_limit_write_burst: int = 3
     rate_limit_vote_per_minute: float = 60
     rate_limit_vote_burst: int = 30
+    rate_limit_arena_per_minute: float = 6  # each battle calls two models
+    rate_limit_arena_burst: int = 3
     # Direct callers from these networks skip limits: our own web server calls the API
     # over the private Docker network. Public traffic arrives via Caddy with the real
     # client IP (X-Forwarded-For), so it is limited.
@@ -67,9 +69,24 @@ class Settings(BaseSettings):
     browser_max_tabs: int = 3
     scrape_min_interval_seconds: float = 2.0  # per domain, raised by robots.txt Crawl-delay
 
-    # LLM enrichment (M2)
+    # LLMs (Arena now, enrichment in M2)
     anthropic_api_key: str | None = None
-    llm_model: str = "claude-haiku-4-5-20251001"
+    llm_model: str = "claude-haiku-4-5"
+    hf_token: str | None = None  # Hugging Face inference router, for the open models
+
+    # Arena: blind side-by-side model battles
+    arena_dev_models: bool | None = None  # free local stand-ins; default: on for localhost only
+    arena_disabled_models: list[str] = []
+    arena_battles_per_day: int = 20  # per visitor
+    arena_daily_budget_usd: float = 5.0  # hard stop for the whole site
+    arena_max_prompt_chars: int = 2000
+    arena_max_output_tokens: int = 1024  # per answer; keeps battles quick and cheap
+
+    @model_validator(mode="after")
+    def _dev_models_on_localhost_only(self) -> "Settings":
+        if self.arena_dev_models is None:
+            self.arena_dev_models = "localhost" in self.site_url or "127.0.0.1" in self.site_url
+        return self
 
     @model_validator(mode="after")
     def _require_real_secret_in_production(self) -> "Settings":

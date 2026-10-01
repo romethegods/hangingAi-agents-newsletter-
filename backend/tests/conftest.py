@@ -59,7 +59,8 @@ async def session_factory(engine):
         await conn.execute(
             text(
                 "TRUNCATE sources, articles, tools, tool_star_snapshots, tool_releases, users,"
-                " login_tokens, sessions, follows, briefs, brief_items RESTART IDENTITY CASCADE"
+                " arena_battles, arena_model_stats, login_tokens, sessions, follows, briefs,"
+                " brief_items RESTART IDENTITY CASCADE"
             )
         )
     return async_sessionmaker(engine, expire_on_commit=False)

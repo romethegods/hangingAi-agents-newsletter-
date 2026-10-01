@@ -163,6 +163,7 @@ class CommentOut(BaseModel):
 class CommentsOut(BaseModel):
     count: int
     comments: list[CommentOut]
+    here: int = 0  # viewers with this chat open right now
 
 
 class ReportIn(BaseModel):
@@ -184,3 +185,63 @@ class ModerationItem(BaseModel):
     status: str
     report_count: int
     created_at: datetime
+
+
+class BattleIn(BaseModel):
+    prompt: str = Field(max_length=8000)  # trimmed and re-checked against the real limit
+
+
+class VoteIn(BaseModel):
+    choice: str
+
+
+class ArenaModelOut(BaseModel):
+    slug: str
+    name: str
+    maker: str
+    open_weights: bool
+
+
+class BattleOut(BaseModel):
+    id: int
+    prompt: str
+    status: str
+    response_a: str | None
+    response_b: str | None
+    error: str | None
+    vote: str | None
+    created_at: datetime
+    mine: bool
+    public: bool
+    # Revealed only after the vote, so the comparison stays blind.
+    model_a: ArenaModelOut | None = None
+    model_b: ArenaModelOut | None = None
+    rating_change_a: float | None = None
+    rating_change_b: float | None = None
+    identity_leak: bool = False
+
+
+class StandingOut(ArenaModelOut):
+    rating: float
+    battles: int
+    wins: int
+    losses: int
+    ties: int
+    win_rate: float | None
+    provisional: bool
+
+
+class ArenaStatusOut(BaseModel):
+    open: bool
+    models: int
+    battles_left: int | None  # None until the visitor has an identity
+    battles_per_day: int
+
+
+class GalleryBattleOut(BaseModel):
+    id: int
+    prompt: str
+    vote: str
+    model_a: ArenaModelOut
+    model_b: ArenaModelOut
+    voted_at: datetime

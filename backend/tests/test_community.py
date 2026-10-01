@@ -355,3 +355,26 @@ async def test_merge_keeps_a_chosen_name_over_an_automatic_one(api, outbox) -> N
     await api.patch("/api/me", headers=h, json={"handle": "rome-tester"})
     merged, _ = await email_account(api, "me@example.com", h, outbox)
     assert merged["id"] == existing["id"] and merged["handle"] == "rome-tester"
+
+
+def test_presence_counts_viewers_and_forgets_idle_ones() -> None:
+    from app.presence import TTL_SECONDS, Presence
+
+    now = [0.0]
+    room = Presence(clock=lambda: now[0])
+    assert room.touch("tool:1", "viewer-aaaa") == 1
+    assert room.touch("tool:1", "viewer-bbbb") == 2
+    assert room.touch("tool:1", "viewer-aaaa") == 2  # same tab polling again
+    assert room.touch("tool:2", "viewer-cccc") == 1  # rooms are separate
+    assert room.touch("tool:1", "bad id!") == 2  # junk ids aren't counted
+    now[0] += TTL_SECONDS - 1
+    assert room.touch("tool:1", "viewer-aaaa") == 2
+    now[0] += 2  # bbbb has now been idle longer than the TTL
+    assert room.touch("tool:1", None) == 1
+
+
+async def test_chat_poll_reports_who_is_here(api, targets) -> None:
+    tool = targets["tool"]
+    first = await api.get(f"/api/comments/tool/{tool}", headers={"X-Viewer-Id": "tab-11111111"})
+    second = await api.get(f"/api/comments/tool/{tool}", headers={"X-Viewer-Id": "tab-22222222"})
+    assert first.json()["here"] >= 1 and second.json()["here"] == first.json()["here"] + 1
