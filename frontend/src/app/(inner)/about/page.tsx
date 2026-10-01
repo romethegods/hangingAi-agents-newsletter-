@@ -43,8 +43,26 @@ export default function AboutPage() {
         </p>
       </section>
 
+      <section id="community" className="scroll-mt-20 space-y-3">
+        <SectionHeader number={2} title="Comments & community" />
+        <p>
+          Anyone can vote and comment, no sign-up needed. You get a name like{" "}
+          <code className="font-mono">hanging-1234</code> and can change it anytime. Add an email
+          only if you want the daily brief in your inbox or to use HangingAi on another device.
+        </p>
+        <ul className="list-[square] space-y-1 pl-5 marker:text-tomato">
+          <li>Be useful: share what worked, what broke, and why.</li>
+          <li>Keep it safe for work. No harassment, hate or spam.</li>
+          <li>At most two links per comment; no self-promotion floods.</li>
+          <li>
+            Three reports hide a comment until a moderator reviews it. Repeat abuse gets an account
+            banned.
+          </li>
+        </ul>
+      </section>
+
       <section id="crawler" className="scroll-mt-20 space-y-3">
-        <SectionHeader number={2} title="Our crawler" />
+        <SectionHeader number={3} title="Our crawler" />
         <p>
           HangingAi&apos;s crawler identifies itself with this token in its user agent:
         </p>

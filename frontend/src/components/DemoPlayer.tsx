@@ -30,7 +30,10 @@ export function DemoPlayer({
   const frame = "relative aspect-video w-full border-[3px] border-ink bg-ink shadow-hard";
 
   if (kind === "gif" || kind === "image") {
-    return <RemoteImage src={url} alt={`${title} demo`} sizes="(min-width: 1024px) 768px, 100vw" priority />;
+    // Whole image, never cropped: README screenshots and banners come in any shape.
+    return (
+      <RemoteImage src={url} alt={`${title} demo`} sizes="(min-width: 1024px) 768px, 100vw" fit="contain" priority />
+    );
   }
 
   if (!playing) {

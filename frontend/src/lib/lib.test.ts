@@ -89,6 +89,8 @@ describe("tool helpers", () => {
     preview_image_url: null,
     demo_url: null,
     demo_kind: null,
+    votes: 0,
+    comments: 0,
   };
 
   it("uses real previews only, never GitHub's generated text cards", () => {

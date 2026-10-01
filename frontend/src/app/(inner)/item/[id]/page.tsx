@@ -5,7 +5,11 @@ import { Suspense } from "react";
 
 import { ArticleMeta, FeedItem } from "@/components/FeedItem";
 import { SectionHeader } from "@/components/SectionHeader";
+import { Comments } from "@/components/Comments";
 import { RemoteImage } from "@/components/RemoteImage";
+import { VoteButton } from "@/components/VoteButton";
+import { getVoteState } from "@/lib/session";
+import { param } from "@/lib/url";
 import { FeedSkeleton } from "@/components/Skeleton";
 import { getArticle } from "@/lib/api";
 import { CONTENT_TYPE_LONG, hostname } from "@/lib/format";
@@ -31,17 +35,17 @@ export async function generateMetadata({ params }: PageProps<"/item/[id]">): Pro
   };
 }
 
-export default function ItemPage({ params }: PageProps<"/item/[id]">) {
+export default function ItemPage({ params, searchParams }: PageProps<"/item/[id]">) {
   return (
     <Suspense fallback={<FeedSkeleton rows={3} />}>
-      <Item params={params} />
+      <Item params={params} searchParams={searchParams} />
     </Suspense>
   );
 }
 
-async function Item({ params }: Pick<PageProps<"/item/[id]">, "params">) {
-  const article = await load(params);
-  const now = await requestNow();
+async function Item({ params, searchParams }: Pick<PageProps<"/item/[id]">, "params" | "searchParams">) {
+  const [article, query] = await Promise.all([load(params), searchParams]);
+  const [now, vote] = await Promise.all([requestNow(), getVoteState("article", article.id)]);
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": article.content_type === "paper" ? "ScholarlyArticle" : "NewsArticle",
@@ -91,14 +95,17 @@ async function Item({ params }: Pick<PageProps<"/item/[id]">, "params">) {
           {article.summary}
         </p>
       )}
+      <div className="mt-8 flex flex-wrap items-center gap-4">
+      <VoteButton kind="article" id={article.id} votes={vote.votes} voted={vote.voted} />
       <a
         href={article.url}
         target="_blank"
         rel="noopener"
-        className="kicker mt-8 inline-block border-2 border-ink bg-tomato px-5 py-3 text-[0.8rem] font-bold text-on-accent shadow-hard transition-[transform,box-shadow] hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[6px_6px_0_0_var(--shadow-ink)]"
+        className="kicker inline-block border-2 border-ink bg-tomato px-5 py-3 text-[0.8rem] font-bold text-on-accent shadow-hard transition-[transform,box-shadow] hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[6px_6px_0_0_var(--shadow-ink)]"
       >
         Read the original on {hostname(article.url)} ↗
       </a>
+      </div>
 
       {article.coverage.length > 0 && (
         <section aria-labelledby="coverage-heading" className="mt-12">
@@ -108,6 +115,16 @@ async function Item({ params }: Pick<PageProps<"/item/[id]">, "params">) {
           ))}
         </section>
       )}
+
+      <Comments
+        kind="article"
+        id={article.id}
+        back={`/item/${article.id}`}
+        now={now}
+        number={article.coverage.length > 0 ? 3 : 2}
+        error={param(query, "comment_error")}
+        reported={Boolean(param(query, "reported"))}
+      />
     </article>
   );
 }

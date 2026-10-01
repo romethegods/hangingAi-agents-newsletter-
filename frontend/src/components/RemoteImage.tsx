@@ -15,6 +15,7 @@ export function RemoteImage({
   className = "",
   priority = false,
   position = "center",
+  fit = "cover",
   fallback,
 }: {
   src: string | null;
@@ -24,6 +25,8 @@ export function RemoteImage({
   priority?: boolean;
   /** "top" keeps the head of tall images, e.g. a paper's title block. */
   position?: "center" | "top";
+  /** "contain" shows the whole image (letterboxed); "cover" fills and crops. */
+  fit?: "cover" | "contain";
   /** Shown when there's no image or it fails to load; defaults to flat shapes. */
   fallback?: React.ReactNode;
 }) {
@@ -38,7 +41,7 @@ export function RemoteImage({
           sizes={sizes}
           priority={priority}
           referrerPolicy="no-referrer"
-          className={`object-cover ${position === "top" ? "object-top" : ""}`}
+          className={`${fit === "contain" ? "object-contain" : "object-cover"} ${position === "top" ? "object-top" : ""}`}
           onError={() => setFailed(true)}
         />
       ) : fallback ? (

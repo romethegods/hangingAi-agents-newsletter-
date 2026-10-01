@@ -5,6 +5,7 @@ import { Suspense } from "react";
 import { edition } from "@/lib/format";
 import { requestNow } from "@/lib/time";
 
+import { AccountLink, AccountLinkFallback } from "./AccountLink";
 import { MastheadArt } from "./Geometry";
 
 const NAV = [
@@ -35,9 +36,17 @@ function NavLinks() {
   );
 }
 
+function Account() {
+  return (
+    <Suspense fallback={<AccountLinkFallback />}>
+      <AccountLink />
+    </Suspense>
+  );
+}
+
 function SearchBox() {
   return (
-    <Form action="/search" className="w-full sm:ml-auto sm:w-auto sm:min-w-72" role="search">
+    <Form action="/search" className="w-full sm:w-auto sm:min-w-64" role="search">
       <label htmlFor="site-search" className="sr-only">
         Search HangingAi
       </label>
@@ -87,7 +96,10 @@ export function FullMasthead() {
       <nav aria-label="Main" className="sticky top-0 z-10 border-b-[3px] border-ink bg-paper/95 backdrop-blur-sm">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-2">
           <NavLinks />
-          <SearchBox />
+          <div className="flex w-full items-center gap-3 sm:ml-auto sm:w-auto">
+            <SearchBox />
+            <Account />
+          </div>
         </div>
       </nav>
     </>
@@ -103,7 +115,10 @@ export function SlimHeader() {
         <nav aria-label="Main">
           <NavLinks />
         </nav>
-        <SearchBox />
+        <div className="flex w-full items-center gap-3 sm:ml-auto sm:w-auto">
+          <SearchBox />
+          <Account />
+        </div>
       </div>
     </header>
   );

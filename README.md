@@ -90,13 +90,31 @@ and 30/min with bursts of 10 for `/api/search`. Every response carries `RateLimi
 web server calls the API over the private network and is exempt. Configure with the
 `RATE_LIMIT_*` settings in `backend/app/config.py`.
 
+## Community & the daily brief
+
+No sign-up. The first time someone follows, votes or comments, they get a guest
+identity (`hanging-1234`, renameable) in an httpOnly cookie. Adding an email is
+optional: it delivers the brief each morning and moves the identity to another
+device (a guest who signs into an existing account is merged into it).
+
+- **Brief** (`/brief`, emailed at the reader's local hour): releases of followed
+  tools, rising tools in followed topics, "for you" must-reads, and one demo.
+  Nothing repeats within 7 days; sending is idempotent per user per day.
+- **Comments & upvotes** on stories and tools; upvotes feed the hot ranking.
+- **Safety:** SFW filter, 2-link cap, duplicate check and per-visitor rate limits
+  on every write; 3 reports hide a comment for review at `/moderate`
+  (`ADMIN_EMAILS`); moderators can restore, remove or ban.
+- **Release tracking:** followed GitHub tools' releases pages, every 6 hours.
+
+`python -m app.worker --releases` and `--briefs` run those jobs on their own.
+
 ## Roadmap
 
 - [x] **M0** skeleton: FastAPI, Postgres, Alembic, Docker, CI
 - [x] **M1** nodriver scraping pipeline + API
 - [ ] **M2** Claude Haiku summaries + tags, embeddings (pgvector) for semantic dedup and recommendations
 - [x] **M3** Next.js website (`frontend/`): feed, article pages, tools directory, search
-- [ ] **M4** accounts, interests, personalized feed
-- [ ] **M5** newsletter (weekly digest, then personalized)
+- [x] **M4** guest identities, follows, comments, upvotes, moderation
+- [x] **M5** personalized daily brief (web + optional email)
 - [ ] **M6** "Ask HangingAi" agent over our own data
 - [ ] **M7** move from Railway to a Google Cloud VM (see `docs/DEPLOY.md`)

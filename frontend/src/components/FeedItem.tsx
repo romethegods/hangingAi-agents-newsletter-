@@ -38,6 +38,7 @@ export function ArticleMeta({
     full ? article.author : null,
     timeAgo(article.published_at, now),
     engagementLabel(article),
+    article.votes ? `▲ ${article.votes}` : null,
   ].filter(Boolean);
   return (
     <p className="flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[11px] text-muted">
@@ -47,6 +48,11 @@ export function ArticleMeta({
           {part}
         </span>
       ))}
+      {article.comments > 0 && (
+        <Link href={`/item/${article.id}#comments`} className="hover:text-ink">
+          💬 {article.comments}
+        </Link>
+      )}
       {full && (
         <a
           href={article.url}

@@ -83,6 +83,8 @@ export function ToolCard({ tool, now }: { tool: Tool; now: number }) {
         )}
         <p className="mt-auto flex flex-wrap gap-x-3 border-t border-hairline pt-3 font-mono text-[11px] text-muted">
           <span>{popularity(tool)}</span>
+          {tool.votes > 0 && <span>▲ {tool.votes}</span>}
+          {tool.comments > 0 && <span>💬 {tool.comments}</span>}
           {tool.language && <span>{tool.language}</span>}
           {tool.platform === "huggingface" && <span>HF Space</span>}
           {tool.pushed_at && <span>updated {timeAgo(tool.pushed_at, now)}</span>}

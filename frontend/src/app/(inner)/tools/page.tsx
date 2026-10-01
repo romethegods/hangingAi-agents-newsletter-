@@ -3,11 +3,13 @@ import Link from "next/link";
 import { Suspense } from "react";
 
 import { EmptyState } from "@/components/EmptyState";
+import { FollowButton } from "@/components/FollowButton";
 import { PageHeader } from "@/components/PageHeader";
 import { CardGridSkeleton } from "@/components/Skeleton";
 import { Tabs } from "@/components/Tabs";
 import { ToolCard } from "@/components/ToolCard";
 import { getTools, getTopics } from "@/lib/api";
+import { getFollows } from "@/lib/session";
 import type { Platform, ToolSort } from "@/lib/types";
 import { oneOf, param, positiveInt, withQuery } from "@/lib/url";
 import { requestNow } from "@/lib/time";
@@ -60,7 +62,7 @@ async function ToolsDirectory({ searchParams }: Pick<PageProps<"/tools">, "searc
   const demos = param(query, "demos") === "1";
   const page = positiveInt(param(query, "page"));
 
-  const [tools, topics] = await Promise.all([
+  const [tools, topics, follows] = await Promise.all([
     getTools({
       sort,
       topic,
@@ -70,6 +72,7 @@ async function ToolsDirectory({ searchParams }: Pick<PageProps<"/tools">, "searc
       offset: (page - 1) * PAGE_SIZE,
     }),
     getTopics(),
+    topic ? getFollows() : Promise.resolve(null),
   ]);
   const now = await requestNow();
   const pages = Math.max(1, Math.ceil(tools.total / PAGE_SIZE));
@@ -108,6 +111,22 @@ async function ToolsDirectory({ searchParams }: Pick<PageProps<"/tools">, "searc
           ▶ With demos only
         </TopicChip>
       </div>
+
+      {topic && (
+        <div className="flex flex-wrap items-center gap-3 border-2 border-ink bg-paper-raised p-3">
+          <p className="text-sm">
+            Showing <strong className="font-mono">#{topic}</strong>. Follow it to get rising{" "}
+            {topic} tools in your daily brief.
+          </p>
+          <FollowButton
+            kind="topic"
+            target={topic}
+            following={follows?.topics.includes(topic) ?? false}
+            back={href({})}
+            label={`#${topic}`}
+          />
+        </div>
+      )}
 
       <nav aria-label="Filter by topic" className="flex flex-wrap gap-2">
         <TopicChip href={href({ topic: undefined, page: undefined })} active={!topic}>
