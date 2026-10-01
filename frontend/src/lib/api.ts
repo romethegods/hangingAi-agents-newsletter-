@@ -19,6 +19,8 @@ import type {
   ToolPage,
   ToolSort,
   Article,
+  GalleryBattle,
+  Standing,
   TopicCount,
 } from "./types";
 import { type QueryValue, withQuery } from "./url";
@@ -92,6 +94,18 @@ export async function getTool(id: number): Promise<Tool | null> {
     if (error instanceof ApiError && error.status === 404) return null;
     throw error;
   }
+}
+
+export async function getLeaderboard(): Promise<Standing[]> {
+  "use cache";
+  cacheLife("minutes");
+  return get<Standing[]>("/api/arena/leaderboard");
+}
+
+export async function getGallery(limit = 12): Promise<GalleryBattle[]> {
+  "use cache";
+  cacheLife("minutes");
+  return get<GalleryBattle[]>("/api/arena/gallery", { limit });
 }
 
 export async function getTopics(limit = 16): Promise<TopicCount[]> {

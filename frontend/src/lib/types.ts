@@ -121,6 +121,7 @@ export interface Comment {
 export interface CommentThread {
   count: number;
   comments: Comment[];
+  here: number;
 }
 
 export interface VoteState {
@@ -138,4 +139,55 @@ export interface ModerationItem {
   status: "visible" | "hidden";
   report_count: number;
   created_at: string;
+}
+
+export interface ArenaModel {
+  slug: string;
+  name: string;
+  maker: string;
+  open_weights: boolean;
+}
+
+export interface Battle {
+  id: number;
+  prompt: string;
+  status: "pending" | "streaming" | "ready" | "voted" | "failed";
+  response_a: string | null;
+  response_b: string | null;
+  error: string | null;
+  vote: "a" | "b" | "tie" | "bad" | null;
+  created_at: string;
+  mine: boolean;
+  public: boolean;
+  model_a: ArenaModel | null; // revealed after the vote
+  model_b: ArenaModel | null;
+  rating_change_a: number | null;
+  rating_change_b: number | null;
+  identity_leak: boolean;
+}
+
+export interface Standing extends ArenaModel {
+  rating: number;
+  battles: number;
+  wins: number;
+  losses: number;
+  ties: number;
+  win_rate: number | null;
+  provisional: boolean;
+}
+
+export interface ArenaStatus {
+  open: boolean;
+  models: number;
+  battles_left: number | null;
+  battles_per_day: number;
+}
+
+export interface GalleryBattle {
+  id: number;
+  prompt: string;
+  vote: "a" | "b" | "tie" | "bad";
+  model_a: ArenaModel;
+  model_b: ArenaModel;
+  voted_at: string;
 }

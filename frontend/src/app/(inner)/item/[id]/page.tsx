@@ -5,11 +5,10 @@ import { Suspense } from "react";
 
 import { ArticleMeta, FeedItem } from "@/components/FeedItem";
 import { SectionHeader } from "@/components/SectionHeader";
-import { Comments } from "@/components/Comments";
+import { ChatSection } from "@/components/ChatSection";
 import { RemoteImage } from "@/components/RemoteImage";
 import { VoteButton } from "@/components/VoteButton";
 import { getVoteState } from "@/lib/session";
-import { param } from "@/lib/url";
 import { FeedSkeleton } from "@/components/Skeleton";
 import { getArticle } from "@/lib/api";
 import { CONTENT_TYPE_LONG, hostname } from "@/lib/format";
@@ -35,16 +34,16 @@ export async function generateMetadata({ params }: PageProps<"/item/[id]">): Pro
   };
 }
 
-export default function ItemPage({ params, searchParams }: PageProps<"/item/[id]">) {
+export default function ItemPage({ params }: PageProps<"/item/[id]">) {
   return (
     <Suspense fallback={<FeedSkeleton rows={3} />}>
-      <Item params={params} searchParams={searchParams} />
+      <Item params={params} />
     </Suspense>
   );
 }
 
-async function Item({ params, searchParams }: Pick<PageProps<"/item/[id]">, "params" | "searchParams">) {
-  const [article, query] = await Promise.all([load(params), searchParams]);
+async function Item({ params }: Pick<PageProps<"/item/[id]">, "params">) {
+  const article = await load(params);
   const [now, vote] = await Promise.all([requestNow(), getVoteState("article", article.id)]);
   const jsonLd = {
     "@context": "https://schema.org",
@@ -116,15 +115,7 @@ async function Item({ params, searchParams }: Pick<PageProps<"/item/[id]">, "par
         </section>
       )}
 
-      <Comments
-        kind="article"
-        id={article.id}
-        back={`/item/${article.id}`}
-        now={now}
-        number={article.coverage.length > 0 ? 3 : 2}
-        error={param(query, "comment_error")}
-        reported={Boolean(param(query, "reported"))}
-      />
+      <ChatSection kind="article" id={article.id} title={article.title} number={article.coverage.length > 0 ? 3 : 2} />
     </article>
   );
 }

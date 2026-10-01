@@ -11,6 +11,7 @@ import { MastheadArt } from "./Geometry";
 const NAV = [
   { href: "/", label: "Front page" },
   { href: "/tools", label: "Tools" },
+  { href: "/arena", label: "Arena" },
   { href: "/about", label: "About" },
 ];
 

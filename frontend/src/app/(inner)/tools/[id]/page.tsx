@@ -8,7 +8,7 @@ import { RemoteImage } from "@/components/RemoteImage";
 import { FeedSkeleton } from "@/components/Skeleton";
 import { ToolPoster } from "@/components/ToolPoster";
 import { StarVelocity } from "@/components/ToolCard";
-import { Comments } from "@/components/Comments";
+import { ChatSection } from "@/components/ChatSection";
 import { FollowButton } from "@/components/FollowButton";
 import { VoteButton } from "@/components/VoteButton";
 import { getTool } from "@/lib/api";
@@ -17,7 +17,7 @@ import { hostname, timeAgo } from "@/lib/format";
 import { requestNow } from "@/lib/time";
 import { DEMO_LABEL, PLATFORM_LABEL, displayName, popularity, previewImage } from "@/lib/tools";
 import type { Tool } from "@/lib/types";
-import { param, withQuery } from "@/lib/url";
+import { withQuery } from "@/lib/url";
 
 // Soft 404 for unknown ids, same trade-off as /item/[id].
 async function load(params: PageProps<"/tools/[id]">["params"]): Promise<Tool> {
@@ -37,16 +37,16 @@ export async function generateMetadata({ params }: PageProps<"/tools/[id]">): Pr
   };
 }
 
-export default function ToolPage({ params, searchParams }: PageProps<"/tools/[id]">) {
+export default function ToolPage({ params }: PageProps<"/tools/[id]">) {
   return (
     <Suspense fallback={<FeedSkeleton rows={3} />}>
-      <ToolDetail params={params} searchParams={searchParams} />
+      <ToolDetail params={params} />
     </Suspense>
   );
 }
 
-async function ToolDetail({ params, searchParams }: Pick<PageProps<"/tools/[id]">, "params" | "searchParams">) {
-  const [tool, follows, query] = await Promise.all([load(params), getFollows(), searchParams]);
+async function ToolDetail({ params }: Pick<PageProps<"/tools/[id]">, "params">) {
+  const [tool, follows] = await Promise.all([load(params), getFollows()]);
   const vote = await getVoteState("tool", tool.id);
   const now = await requestNow();
   const following = follows?.tools.some((t) => t.id === tool.id) ?? false;
@@ -135,15 +135,7 @@ async function ToolDetail({ params, searchParams }: Pick<PageProps<"/tools/[id]"
         )}
       </div>
 
-      <Comments
-        kind="tool"
-        id={tool.id}
-        back={`/tools/${tool.id}`}
-        now={now}
-        number={1}
-        error={param(query, "comment_error")}
-        reported={Boolean(param(query, "reported"))}
-      />
+      <ChatSection kind="tool" id={tool.id} title={tool.full_name.split("/")[1] ?? tool.full_name} number={1} />
     </article>
   );
 }

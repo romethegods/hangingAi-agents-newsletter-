@@ -5,6 +5,7 @@ import { refresh } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { SESSION_COOKIE, apiFetch, sessionToken } from "./session";
+import type { Battle } from "./types";
 import { withQuery } from "./url";
 
 /** Same-site relative paths only, so ?back= / ?next= can't send readers off-site. */
@@ -28,22 +29,30 @@ async function setSession(token: string, expiresAt: string): Promise<void> {
  * guest identity (a hanging-1234 handle) in a long-lived cookie. Created only on a
  * real action, so crawlers browsing the site don't mint accounts.
  */
-async function ensureIdentity(): Promise<void> {
-  if (await sessionToken()) return;
+async function ensureIdentity(): Promise<Response | null> {
+  if (await sessionToken()) return null;
   const res = await apiFetch("/api/guest", { method: "POST" }, { auth: "none" });
-  if (res.status === 429) throw new Error("Too many new visitors from your network; try again shortly.");
+  if (res.status === 429) {
+    // Guest creation is capped per network. Hand back an ordinary error response so
+    // every caller shows this message in place instead of an error page.
+    const detail = "Too many new visitors from your network right now. Try again in a few minutes.";
+    return Response.json({ detail }, { status: 429 });
+  }
   if (!res.ok) throw new Error(`could not create a guest identity (${res.status})`);
   const session = (await res.json()) as { session_token: string; expires_at: string };
   await setSession(session.session_token, session.expires_at);
+  return null;
 }
 
 /** Run an action as the reader; a stale cookie (deleted guest, expired) is replaced once. */
 async function asReader(call: () => Promise<Response>): Promise<Response> {
-  await ensureIdentity();
+  const refused = await ensureIdentity();
+  if (refused) return refused;
   let res = await call();
   if (res.status === 401) {
     (await cookies()).delete(SESSION_COOKIE);
-    await ensureIdentity();
+    const refusedAgain = await ensureIdentity();
+    if (refusedAgain) return refusedAgain;
     res = await call();
   }
   return res;
@@ -116,37 +125,6 @@ export async function toggleVote(formData: FormData): Promise<void> {
   refresh();
 }
 
-export async function postComment(formData: FormData): Promise<void> {
-  const back = safePath(formData.get("back"), "/");
-  const body = {
-    target_kind: String(formData.get("target_kind")),
-    target_id: Number(formData.get("target_id")),
-    body: String(formData.get("body") ?? ""),
-    parent_id: formData.get("parent_id") ? Number(formData.get("parent_id")) : null,
-  };
-  const res = await asReader(() => apiFetch("/api/comments", { method: "POST", body: JSON.stringify(body) }));
-  const [path] = back.split("#");
-  if (!res.ok) redirect(withQuery(path, { comment_error: await errorMessage(res) }) + "#comments");
-  const created = (await res.json()) as { id: number };
-  redirect(`${path}#comment-${created.id}`);
-}
-
-export async function deleteComment(formData: FormData): Promise<void> {
-  await asReader(() => apiFetch(`/api/comments/${Number(formData.get("id"))}`, { method: "DELETE" }));
-  refresh();
-}
-
-export async function reportComment(formData: FormData): Promise<void> {
-  const back = safePath(formData.get("back"), "/");
-  await asReader(() =>
-    apiFetch(`/api/comments/${Number(formData.get("id"))}/report`, {
-      method: "POST",
-      body: JSON.stringify({ reason: "reported from the site" }),
-    }),
-  );
-  redirect(withQuery(back.split("#")[0], { reported: 1 }) + "#comments");
-}
-
 // --- settings ----------------------------------------------------------------------
 
 export async function saveSettings(formData: FormData): Promise<void> {
@@ -188,4 +166,77 @@ export async function moderate(formData: FormData): Promise<void> {
       : `/api/mod/comments/${Number(formData.get("id"))}/${action === "restore" ? "restore" : "remove"}`;
   await apiFetch(path, { method: "POST" });
   refresh();
+}
+
+// --- chat room (called from the client; return results instead of redirecting) ---------
+
+export type ChatResult = { ok: true; handle?: string } | { ok: false; error: string };
+
+export async function sendChatMessage(
+  kind: "article" | "tool",
+  targetId: number,
+  body: string,
+  parentId: number | null,
+): Promise<ChatResult> {
+  const res = await asReader(() =>
+    apiFetch("/api/comments", {
+      method: "POST",
+      body: JSON.stringify({ target_kind: kind, target_id: targetId, body, parent_id: parentId }),
+    }),
+  );
+  return res.ok ? { ok: true } : { ok: false, error: await errorMessage(res) };
+}
+
+export async function chatVote(commentId: number): Promise<ChatResult> {
+  const res = await asReader(() => apiFetch(`/api/votes/comment/${commentId}`, { method: "POST" }));
+  return res.ok ? { ok: true } : { ok: false, error: await errorMessage(res) };
+}
+
+export async function chatDelete(commentId: number): Promise<ChatResult> {
+  const res = await asReader(() => apiFetch(`/api/comments/${commentId}`, { method: "DELETE" }));
+  return res.ok ? { ok: true } : { ok: false, error: await errorMessage(res) };
+}
+
+export async function chatReport(commentId: number): Promise<ChatResult> {
+  const res = await asReader(() =>
+    apiFetch(`/api/comments/${commentId}/report`, {
+      method: "POST",
+      body: JSON.stringify({ reason: "reported from chat" }),
+    }),
+  );
+  return res.ok ? { ok: true } : { ok: false, error: await errorMessage(res) };
+}
+
+/** `/nick newname` in chat. */
+export async function chatNick(handle: string): Promise<ChatResult> {
+  const res = await asReader(() => apiFetch("/api/me", { method: "PATCH", body: JSON.stringify({ handle }) }));
+  if (!res.ok) return { ok: false, error: await errorMessage(res) };
+  const me = (await res.json()) as { handle: string };
+  return { ok: true, handle: me.handle };
+}
+
+// --- arena -----------------------------------------------------------------------------
+
+export async function startBattle(formData: FormData): Promise<void> {
+  const prompt = String(formData.get("prompt") ?? "");
+  const res = await asReader(() => apiFetch("/api/arena/battles", { method: "POST", body: JSON.stringify({ prompt }) }));
+  if (!res.ok) redirect(withQuery("/arena", { error: await errorMessage(res), prompt: prompt.slice(0, 500) }));
+  const battle = (await res.json()) as { id: number };
+  redirect(`/arena/b/${battle.id}`);
+}
+
+// A Battle has its own `error` field, so results are tagged with `ok` rather than
+// told apart by key.
+export type BattleResult = { ok: true; battle: Battle } | { ok: false; error: string };
+
+export async function voteBattle(battleId: number, choice: "a" | "b" | "tie" | "bad"): Promise<BattleResult> {
+  const res = await asReader(() =>
+    apiFetch(`/api/arena/battles/${battleId}/vote`, { method: "POST", body: JSON.stringify({ choice }) }),
+  );
+  return res.ok ? { ok: true, battle: (await res.json()) as Battle } : { ok: false, error: await errorMessage(res) };
+}
+
+export async function shareBattle(battleId: number): Promise<BattleResult> {
+  const res = await asReader(() => apiFetch(`/api/arena/battles/${battleId}/share`, { method: "POST" }));
+  return res.ok ? { ok: true, battle: (await res.json()) as Battle } : { ok: false, error: await errorMessage(res) };
 }

@@ -108,6 +108,28 @@ device (a guest who signs into an existing account is merged into it).
 
 `python -m app.worker --releases` and `--briefs` run those jobs on their own.
 
+## Arena
+
+`/arena`: two anonymous models answer one prompt side by side (streamed live);
+the reader votes, then the names are revealed. Elo ratings (K=32 for a model's
+first 30 battles, then 16) feed a public leaderboard; pairs favor models with
+fewer battles, and A/B order is random. Votes where an answer names its own
+model are recorded but not rated.
+
+Models are listed in `backend/app/arena/registry.py`: Claude Haiku 4.5 (needs
+`ANTHROPIC_API_KEY`) and open models through Hugging Face's router (needs
+`HF_TOKEN`). Without keys, two free "dev" models stand in on localhost.
+Cost controls: 20 battles per visitor per day, a site-wide daily budget
+(`ARENA_DAILY_BUDGET_USD`, checked against the worst case before each battle),
+2,000-character prompts and 1,024-token answers.
+
+## Chat rooms
+
+Every story and tool has its own IRC-style room (`#voicestudio`). It polls
+every 5 s while open (paused in background tabs) and shows "N here now".
+`/nick name` renames you; `/help` lists commands. Messages are comments, so the
+same filters, votes, reports and moderation apply.
+
 ## Roadmap
 
 - [x] **M0** skeleton: FastAPI, Postgres, Alembic, Docker, CI

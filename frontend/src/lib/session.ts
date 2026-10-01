@@ -8,7 +8,16 @@
  */
 import { cookies, headers } from "next/headers";
 
-import type { Brief, CommentThread, Follows, ModerationItem, User, VoteState } from "./types";
+import type {
+  ArenaStatus,
+  Battle,
+  Brief,
+  CommentThread,
+  Follows,
+  ModerationItem,
+  User,
+  VoteState,
+} from "./types";
 
 export const SESSION_COOKIE = "hai_session";
 const API_URL = (process.env.API_URL ?? "http://localhost:8000").replace(/\/$/, "");
@@ -72,6 +81,13 @@ export const getMe = () => getJson<User>("/api/me");
 /** Comments and votes are public; with a session they also say which are yours. */
 export const getComments = (kind: "article" | "tool", id: number) =>
   getPublicJson<CommentThread>(`/api/comments/${kind}/${id}`);
+export const getArenaStatus = () => getPublicJson<ArenaStatus>("/api/arena/status");
+export async function getBattle(id: number): Promise<Battle | null> {
+  const res = await apiFetch(`/api/arena/battles/${id}`, {}, { auth: "optional" });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`API ${res.status} for battle ${id}`);
+  return (await res.json()) as Battle;
+}
 export const getVoteState = (kind: "article" | "tool", id: number) =>
   getPublicJson<VoteState>(`/api/votes/${kind}/${id}`);
 export async function getModerationQueue(): Promise<ModerationItem[] | null> {
